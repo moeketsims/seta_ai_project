@@ -1,0 +1,9 @@
+{
+  "question_content": "Sarah has 12 apples. She gives 1/4 of them to her friend. How many apples does Sarah have left?",
+  "correct_answer": "9 apples",
+  "learner_answer": "8 apples",
+  "question_type": "word_problem",
+  "max_score": 10,
+  "grade": 5,
+  "show_work": "12 divided by 4 = 3. 12 - 4 = 8"
+}

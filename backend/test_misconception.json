@@ -1,0 +1,8 @@
+{
+  "question_content": "Compare: 0.5 and 0.234. Which is larger?",
+  "correct_answer": "0.5",
+  "learner_answer": "0.234",
+  "question_type": "numeric",
+  "grade": 5,
+  "topic": "Decimals"
+}

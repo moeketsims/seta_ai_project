@@ -1,0 +1,12 @@
+{
+  "dashboard_data": {
+    "total_learners": 30,
+    "avg_performance": 73,
+    "at_risk_count": 5,
+    "at_risk_percent": 17,
+    "struggling_topics": ["Fractions", "Decimals"],
+    "last_assessment_date": "2025-10-26",
+    "completion_rate": 90,
+    "engagement_trend": "improving"
+  }
+}

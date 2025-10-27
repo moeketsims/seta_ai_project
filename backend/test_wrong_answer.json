@@ -1,0 +1,8 @@
+{
+  "question_content": "Compare: 0.5 and 0.23. Which is larger?",
+  "correct_answer": "0.5",
+  "learner_answer": "0.23",
+  "question_type": "numeric",
+  "max_score": 10,
+  "grade": 6
+}

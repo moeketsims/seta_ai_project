@@ -1,0 +1,13 @@
+{
+  "learner_id": "learner_001",
+  "current_skills": ["addition", "subtraction", "basic multiplication"],
+  "target_skills": ["fractions", "fraction operations"],
+  "grade": 5,
+  "timeframe_weeks": 6,
+  "misconceptions": [
+    {
+      "name": "Add/Subtract Fractions by Adding Denominators",
+      "description": "Learner adds both numerators and denominators"
+    }
+  ]
+}

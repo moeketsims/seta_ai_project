@@ -1,0 +1,26 @@
+\contentsline {section}{\numberline {1}Introduction: The Crisis and the Opportunity}{3}{section.1}%
+\contentsline {section}{\numberline {2}The Pedagogical Foundation: Evidence-Based Mathematics Education}{3}{section.2}%
+\contentsline {subsection}{\numberline {2.1}Misconception-Centered Learning}{3}{subsection.2.1}%
+\contentsline {subsection}{\numberline {2.2}Diagnostic Assessment as Continuous Learning}{4}{subsection.2.2}%
+\contentsline {subsection}{\numberline {2.3}The South African Context: CAPS Curriculum Integration}{5}{subsection.2.3}%
+\contentsline {section}{\numberline {3}Personalized Learning Pathways: Adaptive Education at Scale}{6}{section.3}%
+\contentsline {subsection}{\numberline {3.1}The Pathway Generation Engine}{6}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}Gamification and Learner Engagement}{7}{subsection.3.2}%
+\contentsline {subsection}{\numberline {3.3}Differentiation and Inclusion}{8}{subsection.3.3}%
+\contentsline {section}{\numberline {4}Teacher Empowerment: From Data to Pedagogical Action}{8}{section.4}%
+\contentsline {subsection}{\numberline {4.1}The Intervention Queue: Prioritized Action}{8}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}Analytics for Pedagogical Insight}{9}{subsection.4.2}%
+\contentsline {subsection}{\numberline {4.3}Professional Development Through Intelligent Feedback}{10}{subsection.4.3}%
+\contentsline {section}{\numberline {5}The AI and Analytics Engine: Technical Sophistication in Service of Pedagogy}{11}{section.5}%
+\contentsline {subsection}{\numberline {5.1}Misconception Detection Through Pattern Recognition}{11}{subsection.5.1}%
+\contentsline {subsection}{\numberline {5.2}Adaptive Learning Algorithms}{12}{subsection.5.2}%
+\contentsline {subsection}{\numberline {5.3}Predictive Analytics for Early Intervention}{13}{subsection.5.3}%
+\contentsline {section}{\numberline {6}Evidence of Impact: Early Results and Research Directions}{14}{section.6}%
+\contentsline {subsection}{\numberline {6.1}Pilot Implementation Outcomes}{14}{subsection.6.1}%
+\contentsline {subsection}{\numberline {6.2}Equity Implications}{15}{subsection.6.2}%
+\contentsline {subsection}{\numberline {6.3}Future Research Agenda}{15}{subsection.6.3}%
+\contentsline {section}{\numberline {7}Ethical Considerations and Responsible AI in Education}{16}{section.7}%
+\contentsline {subsection}{\numberline {7.1}Data Privacy and Protection of Personal Information}{16}{subsection.7.1}%
+\contentsline {subsection}{\numberline {7.2}Algorithmic Fairness and Bias Mitigation}{17}{subsection.7.2}%
+\contentsline {subsection}{\numberline {7.3}Preserving Human Agency and Professional Judgment}{18}{subsection.7.3}%
+\contentsline {section}{\numberline {8}Conclusion: Toward Human-Centered Educational AI}{18}{section.8}%
