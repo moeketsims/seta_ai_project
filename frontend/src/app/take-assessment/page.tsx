@@ -6,6 +6,8 @@ import { Card } from '../../components/ui/card';
 import { useDiagnosticSession } from '../../hooks/useDiagnosticSession';
 import { AudioControls } from '../../components/assessment/AudioControls';
 import { VoiceInputButton } from '../../components/assessment/VoiceInputButton';
+import { VoiceAssessmentMode } from '../../components/assessment/VoiceAssessmentMode';
+import { useVoiceAssessmentMode } from '../../hooks/useVoiceAssessmentMode';
 import type { MatchedOption } from '../../hooks/useVoiceInput';
 
 export default function TakeAssessmentPage() {
@@ -20,6 +22,42 @@ export default function TakeAssessmentPage() {
     formId,
     enabled: true,
     autoStart: false,
+  });
+
+  // Voice assessment mode hook (hands-free voice control)
+  const voiceMode = useVoiceAssessmentMode({
+    currentQuestion: diagnosticSession.currentQuestion ? {
+      stem: diagnosticSession.currentQuestion.stem,
+      context: diagnosticSession.currentQuestion.context,
+      options: diagnosticSession.currentQuestion.options,
+    } : null,
+    onAnswerSelected: (optionId) => {
+      console.log('🎤 Voice mode selected:', optionId);
+      setSelectedAnswer(optionId);
+      // Auto-submit after selection
+      setTimeout(() => {
+        diagnosticSession.submitAnswer(optionId);
+      }, 500);
+    },
+    onNavigate: (action) => {
+      if (action === 'repeat') {
+        // TTS will re-read question automatically
+        console.log('🔁 Repeating question');
+      } else if (action === 'skip') {
+        // Submit null answer to skip
+        diagnosticSession.submitAnswer('skip');
+      }
+    },
+    onHelp: () => {
+      alert('Voice Commands:\n\n' +
+        '• "Option A/B/C/D" - Select an answer\n' +
+        '• "Repeat" - Hear the question again\n' +
+        '• "Help" - Show this message\n' +
+        '• "Disable voice mode" - Switch to manual mode\n\n' +
+        'Just speak naturally and the system will understand!');
+    },
+    voice: 'nova', // Friendly voice for Grade 4
+    autoEnableOnStart: false,
   });
 
   // Parse URL params on mount
@@ -272,13 +310,16 @@ export default function TakeAssessmentPage() {
 
     return (
       <div className="min-h-screen bg-[#F1F3F5]">
+        {/* Floating Voice Assessment Mode Indicator */}
+        <VoiceAssessmentMode voiceMode={voiceMode} />
+
         {/* Top Bar with UFS Navy */}
         <div className="bg-[var(--ufs-navy)] border-b-4 border-[var(--ufs-maroon)] sticky top-0 z-10">
           <div className="max-w-4xl mx-auto px-6 py-4">
             <div className="flex items-center justify-between mb-3">
               <div>
                 <h2 className="font-bold text-white text-lg">Adaptive Diagnostic Assessment</h2>
-                <p className="text-sm text-white/60">AI-powered misconception detection</p>
+                <p className="text-sm text-white/60">AI-powered misconception detection {voiceMode.isEnabled ? '• Voice Mode Active' : ''}</p>
               </div>
               <div className="flex items-center gap-4">
                 <div className="text-sm text-white/80 bg-white/10 px-4 py-2 rounded-lg">
@@ -301,16 +342,18 @@ export default function TakeAssessmentPage() {
         {/* Main Content */}
         <div className="max-w-4xl mx-auto px-6 py-8">
           <Card className="p-8 border-2 border-[var(--ufs-navy)]">
-            {/* Audio Controls for TTS Question Read-Aloud */}
-            <div className="mb-6">
-              <AudioControls
-                text={question.stem}
-                voice="nova"
-                autoPlay={false}
-                showSettings={true}
-                className="mb-6"
-              />
-            </div>
+            {/* Audio Controls for TTS Question Read-Aloud (hidden when voice mode is active) */}
+            {!voiceMode.isEnabled && (
+              <div className="mb-6">
+                <AudioControls
+                  text={question.stem}
+                  voice="nova"
+                  autoPlay={false}
+                  showSettings={true}
+                  className="mb-6"
+                />
+              </div>
+            )}
 
             <div className="mb-6">
               <div className="inline-block px-3 py-1 rounded-full bg-[var(--edu-green)]/10 text-[var(--edu-green)] text-xs font-bold mb-4">
@@ -357,23 +400,39 @@ export default function TakeAssessmentPage() {
               ))}
             </div>
 
-            {/* Voice Input Section */}
-            <div className="mt-6 pt-6 border-t-2 border-neutral-200">
-              <div className="text-center mb-4">
-                <p className="text-sm text-neutral-600 font-medium mb-2">
-                  Or answer using your voice
-                </p>
+            {/* Voice Input Section (hidden when voice mode is active - use floating voice mode instead) */}
+            {!voiceMode.isEnabled && (
+              <div className="mt-6 pt-6 border-t-2 border-neutral-200">
+                <div className="text-center mb-4">
+                  <p className="text-sm text-neutral-600 font-medium mb-2">
+                    Or answer using your voice
+                  </p>
+                </div>
+                <VoiceInputButton
+                  questionOptions={question.options.map((opt) => ({
+                    option_id: opt.id,  // Use existing ID (A, B, C, D)
+                    value: opt.text,
+                  }))}
+                  questionStem={question.stem}
+                  onTranscriptionComplete={handleVoiceTranscription}
+                  size="lg"
+                />
               </div>
-              <VoiceInputButton
-                questionOptions={question.options.map((opt) => ({
-                  option_id: opt.id,  // Use existing ID (A, B, C, D)
-                  value: opt.text,
-                }))}
-                questionStem={question.stem}
-                onTranscriptionComplete={handleVoiceTranscription}
-                size="lg"
-              />
-            </div>
+            )}
+
+            {/* Voice Mode Hint */}
+            {voiceMode.isEnabled && (
+              <div className="mt-6 pt-6 border-t-2 border-neutral-200">
+                <div className="text-center p-4 bg-green-50 dark:bg-green-900/20 rounded-xl border-2 border-green-200 dark:border-green-800">
+                  <p className="text-sm font-semibold text-green-700 dark:text-green-300 mb-2">
+                    🎤 Voice Mode Active
+                  </p>
+                  <p className="text-xs text-green-600 dark:text-green-400">
+                    Just speak your answer naturally. Say "Option A", "Option B", etc., or say "Help" for more commands.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Submit Button */}
             <div className="mt-8 pt-6 border-t-2 border-neutral-200 flex justify-end">
