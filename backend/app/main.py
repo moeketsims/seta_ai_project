@@ -3,9 +3,32 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1 import api_router
 from app.db.database import engine, Base
 import os
+import logging
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
+
+# Validate critical environment variables at startup
+def _validate_startup_config():
+    """Validate required environment variables for AI features."""
+    missing_vars = []
+    
+    # Check for OpenAI credentials if diagnostic AI is enabled
+    if os.getenv("ENABLE_DIAGNOSTIC_AI", "true").lower() in ["true", "1", "yes"]:
+        if not os.getenv("OPENAI_API_KEY"):
+            missing_vars.append("OPENAI_API_KEY")
+    
+    if missing_vars:
+        error_msg = f"Missing required environment variables: {', '.join(missing_vars)}"
+        logger.error(f"Startup validation failed: {error_msg}")
+        raise RuntimeError(error_msg)
+    
+    logger.info("✅ Startup validation passed")
+
+# Run validation before initializing app
+_validate_startup_config()
 
 # Create database tables
 Base.metadata.create_all(bind=engine)

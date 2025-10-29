@@ -8,6 +8,7 @@ from app.api.v1.endpoints import (
     skills,
     misconceptions,
     ai,
+    audio,
 )
 from app.api.v1.endpoints import diagnostic_ai
 
@@ -21,4 +22,5 @@ api_router.include_router(interventions.router, prefix="/interventions", tags=["
 api_router.include_router(skills.router, prefix="/skills", tags=["skills"])
 api_router.include_router(misconceptions.router, prefix="/misconceptions", tags=["misconceptions"])
 api_router.include_router(ai.router, prefix="/ai", tags=["ai"])
+api_router.include_router(audio.router, prefix="/audio", tags=["audio"])
 api_router.include_router(diagnostic_ai.router, prefix="/diagnostic-ai", tags=["diagnostic-ai"])

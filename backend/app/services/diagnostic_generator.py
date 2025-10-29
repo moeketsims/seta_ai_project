@@ -1,23 +1,12 @@
-"""
-Diagnostic Assessment Generator Service.
-
-Uses OpenAI to generate CAPS-aligned diagnostic items where each distractor is
-deliberately mapped to a specific mathematical misconception.
-
-Pipeline:
-1. Blueprint: Define assessment spec from CAPS objective
-2. Generate: LLM creates item with diagnostic distractors
-3. Validate: Basic gates + misconception coverage
-4. Assemble: Build decision tree with probes
-"""
-
-import json
-import os
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 from sqlalchemy.orm import Session
-from openai import OpenAI
-
+from app.integrations.openai_client import (
+    OpenAIClient,
+    OpenAIClientError,
+    OpenAISettings,
+    get_openai_client,
+)
 from app.schemas.diagnostic_schemas import (
     DiagnosticItemSchema,
     DiagnosticProbeSchema,
@@ -42,18 +31,37 @@ class DiagnosticGenerator:
     enabling deep diagnostic inference from learner responses.
     """
 
-    def __init__(self, db: Session, api_key: Optional[str] = None):
+    def __init__(
+        self,
+        db: Session,
+        api_key: Optional[str] = None,
+        client: Optional[OpenAIClient] = None,
+    ):
         """
         Initialize generator with database session and AI client.
 
         Args:
             db: SQLAlchemy database session
-            api_key: OpenAI API key (defaults to env var)
+            api_key: Optional OpenAI API key override
+            client: Optional pre-configured OpenAI client
         """
         self.db = db
-        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
-        self.client = OpenAI(api_key=self.api_key) if self.api_key else OpenAI()
-        self.model = os.getenv("OPENAI_DIAGNOSTIC_MODEL", "gpt-4o-mini")
+        if client is not None:
+            self.client = client
+        else:
+            if api_key:
+                base_settings = OpenAISettings.from_env()
+                override = OpenAISettings(
+                    api_key=api_key,
+                    model=base_settings.model,
+                    temperature=base_settings.temperature,
+                    max_tokens=base_settings.max_tokens,
+                )
+                self.client = OpenAIClient(settings=override)
+            else:
+                self.client = get_openai_client()
+
+        self.model = self.client.settings.model
 
     # ========================================================================
     # Main Generation Pipeline
@@ -171,32 +179,55 @@ class DiagnosticGenerator:
         Returns:
             List of misconception dicts
         """
-        query = self.db.query(Misconception).filter(
-            Misconception.content_areas.contains([content_area])
-        )
+        # Pull all misconceptions once and filter in Python to support legacy schema
+        records: List[Misconception] = self.db.query(Misconception).all()
 
-        # Filter by grade level (misconception applies to this grade)
-        # Note: Using JSON containment - may need adjustment based on DB
-        query = query.filter(Misconception.grade_levels.contains([grade_level]))
+        def severity_value(m: Misconception) -> str:
+            severity = getattr(m, "severity", None)
+            if severity is None:
+                return "medium"
+            return getattr(severity, "value", str(severity)) or "medium"
+
+        def matches_focus(m: Misconception) -> bool:
+            if not focus_tags:
+                return False
+            identifier = getattr(m, "id", None) or getattr(m, "tag", None)
+            return identifier in focus_tags
+
+        def matches_content(m: Misconception) -> bool:
+            category = (getattr(m, "category", "") or "").lower()
+            topic = content_area.split(".")[-1].lower()
+            return topic in category if category else True
 
         # Prioritize focus tags if provided
-        if focus_tags:
-            priority_misconceptions = query.filter(Misconception.tag.in_(focus_tags)).all()
-            other_misconceptions = query.filter(~Misconception.tag.in_(focus_tags)).limit(3).all()
-            misconceptions = priority_misconceptions + other_misconceptions
-        else:
-            misconceptions = query.order_by(Misconception.severity.desc()).limit(5).all()
+        prioritized = [m for m in records if matches_focus(m)] if focus_tags else []
 
-        return [
-            {
-                "tag": m.tag,
-                "name": m.name,
-                "description": m.description,
-                "severity": m.severity.value,
-                "evidence_patterns": m.evidence_patterns,
-            }
-            for m in misconceptions
-        ]
+        remaining = [m for m in records if m not in prioritized and matches_content(m)]
+
+        ordered = sorted(prioritized, key=severity_value, reverse=True) + sorted(
+            remaining, key=severity_value, reverse=True
+        )
+
+        misconceptions = ordered[:5]
+
+        result: List[Dict[str, Any]] = []
+        for m in misconceptions:
+            identifier = getattr(m, "id", None) or getattr(m, "tag", None) or "MISC-UNKNOWN"
+            evidence = getattr(m, "weekly_occurrences", None) or []
+            if not evidence and getattr(m, "description", None):
+                evidence = [getattr(m, "description")]
+
+            result.append(
+                {
+                    "tag": identifier,
+                    "name": getattr(m, "name", identifier),
+                    "description": getattr(m, "description", ""),
+                    "severity": severity_value(m),
+                    "evidence_patterns": evidence,
+                }
+            )
+
+        return result
 
     # ========================================================================
     # Step 2: Root Item Generation
@@ -214,20 +245,14 @@ class DiagnosticGenerator:
         """
         prompt = self._build_root_item_prompt(blueprint)
 
-        # Call OpenAI Chat Completions API
-        completion = self.client.chat.completions.create(
-            model=self.model,
-            temperature=0.7,
-            max_tokens=1200,
-            messages=[
-                {"role": "system", "content": self._get_system_prompt()},
-                {"role": "user", "content": prompt},
-            ],
-        )
-
-        # Parse response
-        response_text = completion.choices[0].message.content or "{}"
-        item_json = self._extract_json(response_text)
+        try:
+            item_json = self.client.json_completion(
+                system_prompt=self._get_system_prompt(),
+                user_prompt=prompt,
+                max_tokens=1200,
+            )
+        except OpenAIClientError as exc:
+            raise ValueError(f"Failed to generate diagnostic root item: {exc}") from exc
 
         # Convert to schema
         item = DiagnosticItemSchema(**item_json)
@@ -334,37 +359,6 @@ You will be provided with:
 
 Generate items that allow teachers to quickly identify the ROOT CAUSE of learner errors, not just that they got it wrong."""
 
-    def _extract_json(self, response_text: str) -> Dict[str, Any]:
-        """
-        Extract JSON from model response, handling markdown code blocks.
-
-        Args:
-            response_text: Raw response from the model
-
-        Returns:
-            Parsed JSON dict
-
-        Raises:
-            ValueError: If JSON cannot be extracted
-        """
-        # Remove markdown code blocks if present
-        text = response_text.strip()
-        if text.startswith("```json"):
-            text = text[7:]  # Remove ```json
-        if text.startswith("```"):
-            text = text[3:]  # Remove ```
-        if text.endswith("```"):
-            text = text[:-3]
-
-        text = text.strip()
-
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError as e:
-            raise ValueError(
-                f"Failed to parse JSON from model response: {e}\n\nResponse:\n{response_text}"
-            )
-
     # ========================================================================
     # Step 3: Probe Generation
     # ========================================================================
@@ -459,6 +453,11 @@ Create an ERROR MODEL PROBE: present the SAME flawed rule in a NEW context. If t
   "parent_item_id": "{root_item.item_id}",
   "misconception_tag": "{misconception['tag']}",
   "stem": "New question that would trigger same misconception...",
+  "context": null,
+  "visual_aid_url": null,
+  "dok_level": "skill_concept",
+  "estimated_time_seconds": 45,
+  "reading_level": {root_item.reading_level or root_item.grade_level},
   "correct_answer": {{
     "option_id": "A",
     "value": "Correct value",
@@ -483,18 +482,16 @@ Create an ERROR MODEL PROBE: present the SAME flawed rule in a NEW context. If t
 }}
 """
 
-        completion = self.client.chat.completions.create(
-            model=self.model,
-            temperature=0.7,
-            max_tokens=800,
-            messages=[
-                {"role": "system", "content": self._get_system_prompt()},
-                {"role": "user", "content": prompt},
-            ],
-        )
-
-        response_text = completion.choices[0].message.content or "{}"
-        probe_json = self._extract_json(response_text)
+        try:
+            probe_json = self.client.json_completion(
+                system_prompt=self._get_system_prompt(),
+                user_prompt=prompt,
+                max_tokens=800,
+            )
+        except OpenAIClientError as exc:
+            raise ValueError(
+                f"Failed to generate diagnostic probe for {misconception['tag']}: {exc}"
+            ) from exc
 
         return DiagnosticProbeSchema(**probe_json)
 

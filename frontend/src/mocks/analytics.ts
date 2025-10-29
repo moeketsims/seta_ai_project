@@ -99,22 +99,24 @@ const classDataCache: Record<string, any> = {};
 
 // Generate performance trend for a specific class
 export function getPerformanceTrendData(classId: string): ChartData {
-  const basePerformance: Record<string, number> = {
-    'class-g4a': 73,
-    'class-g4b': 68,
-    'class-g5a': 76,
-    'class-g6a': 72,
-    'class-g7a': 70,
+  // UPDATED: Start low (~52%), climb to max 70% - shows improvement journey
+  const startPerformance: Record<string, number> = {
+    'class-g4a': 52, // Start low
+    'class-g4b': 48,
+    'class-g5a': 55,
+    'class-g6a': 50,
+    'class-g7a': 54,
   };
 
-  const base = basePerformance[classId] || 70;
-  const trend = 0.8; // Weekly improvement
-  const variance = 3; // Random fluctuation
+  const start = startPerformance[classId] || 52;
+  const trend = 1.5; // Stronger improvement trend
+  const variance = 2; // Less random fluctuation for cleaner line
 
   const data = Array.from({ length: 12 }, (_, i) => {
-    const trendValue = base + i * trend;
+    const trendValue = start + i * trend;
     const random = (Math.random() - 0.5) * variance;
-    return Math.round(trendValue + random);
+    const value = Math.round(trendValue + random);
+    return Math.min(value, 70); // Cap at 70% max
   });
 
   return {
@@ -255,14 +257,17 @@ export function getClassAnalytics(classId: string) {
 // Get skill mastery data for a class
 export function getSkillMasteryData(classId: string): ChartData {
   const analytics = getClassAnalytics(classId);
-  const basePerf = analytics.avgPerformance;
 
-  // Generate realistic skill distribution
+  // UPDATED: Wide variety for dramatic visual contrast
+  // Some high (80s), some struggling (40s-50s), some mid (60s-70s)
   const skills = ['Numbers', 'Algebra', 'Geometry', 'Measurement', 'Data'];
-  const data = skills.map((_, i) => {
-    const variance = (Math.random() - 0.5) * 10;
-    return Math.round(basePerf + variance);
-  });
+  const data = [
+    82, // Numbers - Strong
+    45, // Algebra - STRUGGLING (critical)
+    68, // Geometry - Mid
+    52, // Measurement - Low
+    76, // Data - Good
+  ];
 
   return {
     labels: skills,

@@ -6,6 +6,8 @@ Routes learners to the next item/probe based on their responses and maintains
 diagnostic state (suspected/confirmed misconceptions).
 """
 
+import logging
+import re
 from typing import Dict, Any, Optional, Tuple, List
 from sqlalchemy.orm import Session
 from datetime import datetime
@@ -14,8 +16,16 @@ from app.models.diagnostic_models import (
     DiagnosticSession,
     DiagnosticResult,
     DiagnosticForm,
+    DiagnosticItem,
+    DiagnosticProbe,
+    FormItemMap,
     Misconception,
     MisconceptionSeverityEnum,
+)
+from app.models.models import (
+    AIGeneratedQuestion,
+    AIGeneratedMisconception,
+    AdaptiveDecisionTree,
 )
 from app.schemas.diagnostic_schemas import (
     DiagnosticSessionStateSchema,
@@ -23,7 +33,11 @@ from app.schemas.diagnostic_schemas import (
     NextNodeRequest,
     NextNodeResponse,
     MisconceptionSeverity,
+    GenerateDiagnosticFormRequest,
 )
+from app.services.diagnostic_generator import DiagnosticGenerator
+
+logger = logging.getLogger(__name__)
 
 
 class DiagnosticRouter:
@@ -66,8 +80,11 @@ class DiagnosticRouter:
         """
         # Fetch form from database
         form = self.db.query(DiagnosticForm).filter(DiagnosticForm.form_id == form_id).first()
+        if form and self._looks_like_mock_form(form):
+            form = None
+
         if not form:
-            raise ValueError(f"Diagnostic form {form_id} not found")
+            form = self._create_or_generate_form(form_id)
 
         # Create session
         session = DiagnosticSession(
@@ -86,7 +103,11 @@ class DiagnosticRouter:
         self.db.commit()
         self.db.refresh(session)
 
-        return DiagnosticSessionStateSchema(
+        # Also fetch the first question to return with the session
+        first_node = self.get_current_node(session.session_id)
+
+        # Create response with first question embedded
+        response = DiagnosticSessionStateSchema(
             session_id=session.session_id,
             learner_id=session.learner_id,
             form_id=session.form_id,
@@ -96,7 +117,10 @@ class DiagnosticRouter:
             suspected_misconceptions=session.suspected_misconceptions,
             confirmed_misconceptions=session.confirmed_misconceptions,
             started_at=session.started_at,
+            current_node=first_node,
         )
+
+        return response
 
     def get_current_node(self, session_id: str) -> Dict[str, Any]:
         """
@@ -109,23 +133,211 @@ class DiagnosticRouter:
             Current node (item or probe) as dict
 
         Raises:
-            ValueError: If session not found
+            ValueError: If session not found or decision tree invalid
         """
         session = self._get_session(session_id)
         form = self.db.query(DiagnosticForm).filter(DiagnosticForm.form_id == session.form_id).first()
+        
+        if not form:
+            raise ValueError(f"Form {session.form_id} not found for session {session_id}")
 
         # Find current node in form's decision tree
         decision_tree = form.decision_tree  # JSON containing all nodes
+        
+        if not decision_tree:
+            raise ValueError(f"Form {session.form_id} has no decision tree data")
 
         current_node = decision_tree.get("nodes", {}).get(session.current_node_id)
         if not current_node:
-            raise ValueError(f"Current node {session.current_node_id} not found in decision tree")
+            raise ValueError(f"Current node {session.current_node_id} not found in decision tree for form {session.form_id}")
 
         return current_node
 
     # ========================================================================
     # Navigation
     # ========================================================================
+
+    def _create_or_generate_form(self, form_id: str) -> DiagnosticForm:
+        """Generate a diagnostic form via OpenAI or fall back to mock content."""
+        try:
+            request = self._build_generation_request(form_id)
+            generator = DiagnosticGenerator(db=self.db)
+            response = generator.generate_diagnostic_form(request)
+            form = self._persist_generated_form(response.form)
+            logger.info("Generated diagnostic form %s via OpenAI", form.form_id)
+            return form
+        except Exception as exc:  # noqa: BLE001 - we want to log any failure and fallback
+            logger.warning(
+                "Falling back to mock diagnostic form '%s' due to generation error: %s",
+                form_id,
+                exc,
+            )
+            return self._create_mock_diagnostic_form(form_id)
+
+    def _build_generation_request(self, form_id: str) -> GenerateDiagnosticFormRequest:
+        """Create a generation request heuristic based on the form identifier."""
+        grade_level = 4
+        match = re.search(r"g(\d+)", form_id, re.IGNORECASE)
+        if match:
+            try:
+                grade_level = max(1, min(12, int(match.group(1))))
+            except ValueError:
+                grade_level = 4
+
+        content_area = "Numbers.Operations.Addition"
+        if grade_level >= 5:
+            content_area = "Numbers.Operations.Fractions"
+
+        caps_objective_id = f"CAPS-G{grade_level}-NUM-ADD-01"
+
+        return GenerateDiagnosticFormRequest(
+            caps_objective_id=caps_objective_id,
+            grade_level=grade_level,
+            content_area=content_area,
+            max_items=5,
+            max_time_minutes=8,
+            include_visuals=False,
+            reading_level_max=grade_level,
+        )
+
+    def _persist_generated_form(self, form_schema) -> DiagnosticForm:
+        """Persist a generated diagnostic form and return the ORM instance."""
+        root_item_schema = form_schema.items[0]
+
+        root_item = self.db.query(DiagnosticItem).filter(
+            DiagnosticItem.item_id == root_item_schema.item_id
+        ).first()
+
+        root_payload = root_item_schema.model_dump(mode="json")
+
+        if not root_item:
+            root_item = DiagnosticItem(
+                item_id=root_item_schema.item_id,
+                item_type="root",
+                caps_objective_id=root_item_schema.caps_objective_id,
+                content_area=root_item_schema.content_area,
+                grade_level=root_item_schema.grade_level,
+                stem=root_item_schema.stem,
+                context=root_item_schema.context,
+                visual_aid_url=root_item_schema.visual_aid_url,
+                dok_level=root_item_schema.dok_level.value
+                if hasattr(root_item_schema.dok_level, "value")
+                else str(root_item_schema.dok_level),
+                estimated_time_seconds=root_item_schema.estimated_time_seconds,
+                reading_level=root_item_schema.reading_level,
+                correct_answer=root_item_schema.correct_answer.model_dump(mode="json"),
+                distractors=[d.model_dump(mode="json") for d in root_item_schema.distractors],
+                validated=getattr(form_schema, "validated", False),
+            )
+            self.db.add(root_item)
+        else:
+            root_item.stem = root_item_schema.stem
+            root_item.context = root_item_schema.context
+            root_item.visual_aid_url = root_item_schema.visual_aid_url
+            root_item.dok_level = root_item_schema.dok_level.value if hasattr(
+                root_item_schema.dok_level, "value"
+            ) else str(root_item_schema.dok_level)
+            root_item.estimated_time_seconds = root_item_schema.estimated_time_seconds
+            root_item.reading_level = root_item_schema.reading_level
+            root_item.correct_answer = root_item_schema.correct_answer.model_dump(mode="json")
+            root_item.distractors = [d.model_dump(mode="json") for d in root_item_schema.distractors]
+
+        # Upsert probes
+        for probe_schema in form_schema.probes:
+            probe = self.db.query(DiagnosticProbe).filter(
+                DiagnosticProbe.probe_id == probe_schema.probe_id
+            ).first()
+            if not probe:
+                probe = DiagnosticProbe(
+                    probe_id=probe_schema.probe_id,
+                    probe_type=probe_schema.probe_type.value
+                    if hasattr(probe_schema.probe_type, "value")
+                    else str(probe_schema.probe_type),
+                    parent_item_id=probe_schema.parent_item_id,
+                    misconception_tag=probe_schema.misconception_tag,
+                    stem=probe_schema.stem,
+                    correct_answer=probe_schema.correct_answer.model_dump(mode="json"),
+                    distractors=[d.model_dump(mode="json") for d in probe_schema.distractors],
+                    confirms_misconception=probe_schema.confirms_misconception,
+                    scaffolding_hint=probe_schema.scaffolding_hint,
+                    micro_intervention_id=probe_schema.micro_intervention_id,
+                )
+                self.db.add(probe)
+            else:
+                probe.probe_type = probe_schema.probe_type.value if hasattr(
+                    probe_schema.probe_type, "value"
+                ) else str(probe_schema.probe_type)
+                probe.parent_item_id = probe_schema.parent_item_id
+                probe.misconception_tag = probe_schema.misconception_tag
+                probe.stem = probe_schema.stem
+                probe.correct_answer = probe_schema.correct_answer.model_dump(mode="json")
+                probe.distractors = [d.model_dump(mode="json") for d in probe_schema.distractors]
+                probe.confirms_misconception = probe_schema.confirms_misconception
+                probe.scaffolding_hint = probe_schema.scaffolding_hint
+                probe.micro_intervention_id = probe_schema.micro_intervention_id
+
+        # Build decision tree map expected by router
+        nodes: Dict[str, Any] = {
+            root_item_schema.item_id: root_payload,
+            **{p.probe_id: p.model_dump(mode="json") for p in form_schema.probes},
+        }
+        edges = [edge.model_dump(mode="json") for edge in form_schema.edges]
+
+        form_record = self.db.query(DiagnosticForm).filter(
+            DiagnosticForm.form_id == form_schema.form_id
+        ).first()
+
+        if not form_record:
+            form_record = DiagnosticForm(
+                form_id=form_schema.form_id,
+                title=form_schema.title,
+                caps_objective_id=form_schema.caps_objective_id,
+                grade_level=form_schema.grade_level,
+                root_item_id=form_schema.root_item_id,
+                decision_tree={"nodes": nodes, "edges": edges},
+                max_time_minutes=form_schema.max_time_minutes,
+                max_depth=form_schema.max_depth,
+                validated=getattr(form_schema, "validated", False),
+                pilot_approved=getattr(form_schema, "pilot_approved", False),
+                version=getattr(form_schema, "version", 1),
+            )
+            self.db.add(form_record)
+        else:
+            form_record.title = form_schema.title
+            form_record.caps_objective_id = form_schema.caps_objective_id
+            form_record.grade_level = form_schema.grade_level
+            form_record.root_item_id = form_schema.root_item_id
+            form_record.decision_tree = {"nodes": nodes, "edges": edges}
+            form_record.max_time_minutes = form_schema.max_time_minutes
+            form_record.max_depth = form_schema.max_depth
+
+        if not self.db.query(FormItemMap).filter(
+            FormItemMap.form_id == form_schema.form_id,
+            FormItemMap.item_id == root_item_schema.item_id,
+        ).first():
+            self.db.add(
+                FormItemMap(
+                    form_id=form_schema.form_id,
+                    item_id=root_item_schema.item_id,
+                    sequence_order=0,
+                )
+            )
+
+        self.db.commit()
+
+        return form_record
+
+    def _looks_like_mock_form(self, form: DiagnosticForm) -> bool:
+        """Heuristically determine if a stored form is the legacy mock version."""
+        try:
+            nodes = (form.decision_tree or {}).get("nodes", {})
+            root = nodes.get(form.root_item_id)
+            if not root:
+                return False
+            stem = root.get("stem", "").lower()
+            return "345 + 278" in stem
+        except Exception:  # noqa: BLE001 - defensive; if malformed, treat as non-mock
+            return False
 
     def next_node(self, request: NextNodeRequest) -> NextNodeResponse:
         """
@@ -408,7 +620,7 @@ class DiagnosticRouter:
         if confirmed:
             misconceptions = (
                 self.db.query(Misconception)
-                .filter(Misconception.tag.in_(confirmed))
+                .filter(Misconception.id.in_(confirmed))
                 .all()
             )
 
@@ -436,7 +648,7 @@ class DiagnosticRouter:
             return "Learner demonstrated mastery of this objective. No significant misconceptions detected."
 
         # Fetch misconception details
-        misc = self.db.query(Misconception).filter(Misconception.tag == primary_misconception).first()
+        misc = self.db.query(Misconception).filter(Misconception.id == primary_misconception).first()
 
         if not misc:
             return f"Learner shows difficulty with this concept (confidence: {session.suspected_misconceptions.get(primary_misconception, 0):.0%})."
@@ -458,12 +670,18 @@ class DiagnosticRouter:
         if not primary_misconception:
             return "Great work! You've shown a strong understanding of this topic. Keep up the excellent effort!"
 
-        misc = self.db.query(Misconception).filter(Misconception.tag == primary_misconception).first()
+        misc = self.db.query(Misconception).filter(Misconception.id == primary_misconception).first()
 
-        feedback = "Thank you for completing this diagnostic assessment. "
-        feedback += "Your teacher will review your results and provide personalized support to help you master this concept. "
-        feedback += "\n\nRemember: Making mistakes is an important part of learning! "
-        feedback += "We've identified some areas where extra practice will help you build confidence."
+        # Generate encouraging, child-friendly feedback
+        if not session.confirmed_misconceptions:
+            feedback = "🌟 Great job completing the assessment! You're showing strong understanding. "
+            feedback += "Your teacher will review your work and help you keep growing your math skills. "
+            feedback += "Keep up the awesome work!"
+        else:
+            feedback = "🌟 Awesome work completing the assessment! You did a great job. "
+            feedback += "We noticed a few areas where some extra practice will help you become even better. "
+            feedback += "Your teacher will work with you on fun activities to help these concepts click. "
+            feedback += "Every mathematician learns by practicing - you're doing great!"
 
         return feedback
 
@@ -612,3 +830,144 @@ class DiagnosticRouter:
         """Generate unique session ID."""
         import uuid
         return f"SESSION-{uuid.uuid4().hex[:16].upper()}"
+
+    def _create_mock_diagnostic_form(self, form_id: str) -> DiagnosticForm:
+        """
+        Create diagnostic form from AI-generated questions in the database.
+
+        Loads CAPS-compliant Grade 4 questions that were pre-generated by
+        the AI question generator and builds an adaptive decision tree.
+
+        Args:
+            form_id: ID for the new form
+
+        Returns:
+            Created DiagnosticForm with AI questions
+        """
+        import json
+        from datetime import datetime
+
+        # Check if form already exists
+        existing_form = self.db.query(DiagnosticForm).filter(DiagnosticForm.form_id == form_id).first()
+        if existing_form:
+            logger.info("Diagnostic form '%s' already exists, returning existing form", form_id)
+            return existing_form
+
+        # Load AI-generated questions from database
+        ai_questions = (
+            self.db.query(AIGeneratedQuestion)
+            .filter(AIGeneratedQuestion.validated == True)  # noqa: E712
+            .filter(AIGeneratedQuestion.grade_level == 4)
+            .order_by(AIGeneratedQuestion.difficulty_level, AIGeneratedQuestion.item_id)
+            .limit(3)  # Use first 3 questions for diagnostic
+            .all()
+        )
+
+        if not ai_questions or len(ai_questions) < 3:
+            raise ValueError(
+                f"Not enough AI-generated questions in database. Found {len(ai_questions)}, need at least 3. "
+                "Run scripts/generate_questions.py to generate questions."
+            )
+
+        logger.info(f"Loaded {len(ai_questions)} AI-generated questions for form {form_id}")
+
+        # Build decision tree from AI questions
+        nodes = {}
+        edges = []
+
+        for idx, q in enumerate(ai_questions):
+            # Parse distractors JSON
+            distractors_data = json.loads(q.distractors) if isinstance(q.distractors, str) else q.distractors
+
+            # Get misconceptions for this question
+            misconceptions = (
+                self.db.query(AIGeneratedMisconception)
+                .filter(AIGeneratedMisconception.question_id == q.id)
+                .all()
+            )
+
+            # Build distractor list with misconception info
+            distractors = []
+            for dist in distractors_data:
+                # Find matching misconception
+                matching_misc = next(
+                    (m for m in misconceptions if m.distractor_option == dist["option_id"]),
+                    None
+                )
+
+                distractors.append({
+                    "option_id": dist["option_id"],
+                    "value": dist["value"],
+                    "misconception_tag": matching_misc.misconception_tag if matching_misc else f"MISC-{idx}-{dist['option_id']}",
+                    "rationale": dist.get("rationale", dist.get("misconception_tag", "Common error")),
+                    "confidence_weight": dist.get("confidence_weight", 0.5)
+                })
+
+            # Create node
+            nodes[q.item_id] = {
+                "item_id": q.item_id,
+                "type": "item",
+                "stem": q.stem,
+                "correct_answer": {
+                    "option_id": q.correct_answer_option,
+                    "value": q.correct_answer_value,
+                    "reasoning": q.correct_answer_reasoning or "Correct CAPS method"
+                },
+                "distractors": distractors,
+                "estimated_time_seconds": q.estimated_time_seconds or 45
+            }
+
+            # Create edges (adaptive routing)
+            next_item_id = ai_questions[idx + 1].item_id if idx < len(ai_questions) - 1 else None
+
+            # Correct answer edge
+            edges.append({
+                "from_node_id": q.item_id,
+                "option_selected": q.correct_answer_option,
+                "to_node_id": next_item_id,
+                "misconception_tag": None,
+                "confidence_delta": 0.0
+            })
+
+            # Distractor edges
+            for dist in distractors:
+                # Find matching misconception for confidence weight
+                matching_misc = next((m for m in misconceptions if m.distractor_option == dist["option_id"]), None)
+
+                edges.append({
+                    "from_node_id": q.item_id,
+                    "option_selected": dist["option_id"],
+                    "to_node_id": next_item_id,
+                    "misconception_tag": dist["misconception_tag"],
+                    "confidence_delta": matching_misc.confidence_weight if matching_misc else dist.get("confidence_weight", 0.5)
+                })
+
+        decision_tree = {
+            "nodes": nodes,
+            "edges": edges
+        }
+
+        # Create and persist form
+        root_item_id = ai_questions[0].item_id
+
+        form = DiagnosticForm(
+            form_id=form_id,
+            title=f"Grade 4 Mathematics Diagnostic - AI-Generated (CAPS)",
+            caps_objective_id=ai_questions[0].caps_objective or "CAPS-G4-NUM-01",
+            grade_level=4,
+            root_item_id=root_item_id,
+            decision_tree=decision_tree,
+            max_time_minutes=5,
+            max_depth=len(ai_questions),
+            validated=True,
+            pilot_approved=True,
+            version=1,
+            created_at=datetime.utcnow()
+        )
+
+        self.db.add(form)
+        self.db.commit()
+        self.db.refresh(form)
+
+        logger.info(f"Created AI-powered diagnostic form '{form_id}' with {len(ai_questions)} questions")
+        return form

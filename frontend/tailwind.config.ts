@@ -6,78 +6,104 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        // UFS Brand Token Colors (Authoritative)
+        'ufs-navy': '#0F204B',
+        'ufs-maroon': '#A71930',
+        'ufs-gray-900': '#23272A',
+        'ufs-gray-700': '#4B5563',
+        'ufs-gray-500': '#6B7280',
+        'ufs-gray-300': '#D1D5DB',
+        'ufs-gray-200': '#E5E7EB',
+        'ufs-gray-100': '#F1F3F5',
+        'edu-green': '#00675A',
+        
+        // Semantic colors aligned with UFS brand
         primary: {
-          DEFAULT: '#0066CC',
-          50: '#E6F2FF',
-          100: '#CCE5FF',
-          200: '#99CCFF',
-          300: '#66B2FF',
-          400: '#3399FF',
-          500: '#0066CC',
-          600: '#0052A3',
-          700: '#003D7A',
-          800: '#002952',
-          900: '#001429',
+          DEFAULT: '#0F204B', // UFS Navy
+          50: '#E8ECF5',
+          100: '#D1D9EB',
+          200: '#A3B3D7',
+          300: '#758DC3',
+          400: '#4767AF',
+          500: '#0F204B',
+          600: '#0C1A3C',
+          700: '#09132D',
+          800: '#060D1E',
+          900: '#03060F',
           foreground: '#ffffff'
         },
         secondary: {
-          DEFAULT: '#7C3AED',
-          50: '#F5F3FF',
-          100: '#EDE9FE',
-          200: '#DDD6FE',
-          300: '#C4B5FD',
-          400: '#A78BFA',
-          500: '#7C3AED',
-          600: '#6D28D9',
-          700: '#5B21B6',
-          800: '#4C1D95',
-          900: '#3B0764',
+          DEFAULT: '#A71930', // UFS Maroon
+          50: '#FDE8EB',
+          100: '#FBD1D7',
+          200: '#F7A3AF',
+          300: '#F37587',
+          400: '#EF475F',
+          500: '#A71930',
+          600: '#861426',
+          700: '#640F1D',
+          800: '#430A13',
+          900: '#21050A',
+          foreground: '#ffffff'
+        },
+        education: {
+          DEFAULT: '#00675A', // Education Green
+          50: '#E6F5F3',
+          100: '#CCEBE7',
+          200: '#99D7CF',
+          300: '#66C3B7',
+          400: '#33AF9F',
+          500: '#00675A',
+          600: '#005248',
+          700: '#003E36',
+          800: '#002924',
+          900: '#001512',
           foreground: '#ffffff'
         },
         success: {
-          DEFAULT: '#10B981',
+          DEFAULT: '#1F8A70', // Tint of edu-green
           50: '#ECFDF5',
-          500: '#10B981',
-          600: '#059669',
-          foreground: '#0B4F3C'
+          500: '#1F8A70',
+          600: '#00675A',
+          foreground: '#ffffff'
         },
         warning: {
-          DEFAULT: '#F59E0B',
+          DEFAULT: '#C97A00', // Muted amber
           50: '#FFFBEB',
-          500: '#F59E0B',
-          600: '#D97706',
+          500: '#C97A00',
+          600: '#A86400',
           foreground: '#4C2A04'
         },
         error: {
-          DEFAULT: '#EF4444',
-          50: '#FEF2F2',
-          500: '#EF4444',
-          600: '#DC2626',
-          foreground: '#7F1D1D'
+          DEFAULT: '#A71930', // UFS Maroon
+          50: '#FDE8EB',
+          500: '#A71930',
+          600: '#861426',
+          foreground: '#ffffff'
         },
         info: {
-          DEFAULT: '#3B82F6',
-          50: '#EFF6FF',
-          500: '#3B82F6',
-          600: '#2563EB',
+          DEFAULT: '#0F204B', // UFS Navy
+          50: '#E8ECF5',
+          500: '#0F204B',
+          600: '#0C1A3C',
         },
         neutral: {
           50: '#FAFAFA',
-          100: '#F5F5F5',
-          200: '#E5E5E5',
-          300: '#D4D4D4',
-          400: '#A3A3A3',
-          500: '#737373',
-          600: '#525252',
-          700: '#404040',
-          800: '#262626',
-          900: '#171717',
-          950: '#0A0A0A'
+          100: '#F1F3F5', // UFS Gray 100
+          200: '#E5E7EB', // UFS Gray 200
+          300: '#D1D5DB', // UFS Gray 300
+          400: '#9CA3AF',
+          500: '#6B7280', // UFS Gray 500
+          600: '#4B5563', // UFS Gray 700
+          700: '#4B5563',
+          800: '#23272A', // UFS Gray 900
+          900: '#23272A',
+          950: '#1A1D1F'
         }
       },
       fontFamily: {
-        heading: ['"Poppins"', '"Inter"', 'system-ui', 'sans-serif'],
-        body: ['"Inter"', 'system-ui', 'sans-serif'],
+        heading: ['"Leitura Sans"', 'Arial', 'system-ui', 'sans-serif'], // UFS brand typography
+        body: ['"Leitura Sans"', 'Arial', 'system-ui', 'sans-serif'],    // UFS brand typography
         mono: ['"JetBrains Mono"', 'monospace']
       },
       fontSize: {
@@ -112,10 +138,11 @@ const config: Config = {
         'xl': '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
         '2xl': '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
         'inner': 'inset 0 2px 4px 0 rgba(0, 0, 0, 0.05)',
+        'card': '0 4px 20px rgba(15, 32, 75, 0.08)', // UFS card shadow (navy tint)
         'elevation': '0 20px 45px -20px rgba(15, 23, 42, 0.25)',
         'glass': '0 8px 32px 0 rgba(31, 38, 135, 0.15)',
-        'glow-primary': '0 0 20px rgba(0, 102, 204, 0.3)',
-        'glow-secondary': '0 0 20px rgba(124, 58, 237, 0.3)',
+        'glow-primary': '0 0 20px rgba(15, 32, 75, 0.3)', // UFS Navy glow
+        'glow-secondary': '0 0 20px rgba(167, 25, 48, 0.3)', // UFS Maroon glow
       },
       backgroundImage: {
         'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',

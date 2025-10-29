@@ -133,8 +133,15 @@ class DiagnosticProbeSchema(BaseModel):
 
     # Probe content (same structure as diagnostic item)
     stem: str
+    context: Optional[str] = Field(None, description="Real-world context or scenario")
+    visual_aid_url: Optional[str] = Field(None, description="URL to diagram/image if needed")
     correct_answer: DiagnosticCorrectAnswerSchema
     distractors: List[DiagnosticDistractorSchema]
+
+    # Cognitive metadata
+    dok_level: DOKLevel = Field(default=DOKLevel.SKILL_CONCEPT, description="Depth of Knowledge level")
+    estimated_time_seconds: int = Field(default=45, ge=15, le=300, description="Expected time to complete")
+    reading_level: Optional[int] = Field(None, description="Flesch-Kincaid grade level")
 
     # Probe-specific metadata
     confirms_misconception: bool = Field(
@@ -221,6 +228,12 @@ class DiagnosticSessionStateSchema(BaseModel):
     started_at: datetime = Field(default_factory=datetime.utcnow)
     completed_at: Optional[datetime] = None
     total_time_seconds: Optional[int] = None
+
+    # Current node payload (item or probe)
+    current_node: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Current diagnostic item/probe content for the learner to answer"
+    )
 
 
 class DiagnosticResultSchema(BaseModel):

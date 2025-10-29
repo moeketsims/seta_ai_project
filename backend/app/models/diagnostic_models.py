@@ -16,7 +16,8 @@ from sqlalchemy.sql import func
 from datetime import datetime
 import enum
 
-from app.db.base_class import Base
+from app.db.database import Base
+from app.models.models import Misconception
 
 
 # ============================================================================
@@ -48,61 +49,16 @@ class DOKLevelEnum(str, enum.Enum):
 
 
 # ============================================================================
-# Misconception Taxonomy
-# ============================================================================
-
-class Misconception(Base):
-    """
-    A documented mathematical misconception.
-
-    Example: "Multiplication always makes bigger" (believing a×b always > max(a,b))
-    """
-    __tablename__ = "misconceptions"
-
-    id = Column(Integer, primary_key=True, index=True)
-    tag = Column(String(50), unique=True, nullable=False, index=True)  # e.g., "MISC-NUM-037"
-    name = Column(String(200), nullable=False)
-    description = Column(Text, nullable=False)
-
-    # CAPS alignment
-    caps_objective_ids = Column(JSON, nullable=False, default=list)  # List of affected objectives
-    content_areas = Column(JSON, nullable=False, default=list)  # ["Numbers.Operations", etc.]
-    grade_levels = Column(JSON, nullable=False, default=list)  # [4, 5, 6]
-
-    # Classification
-    severity = Column(SQLEnum(MisconceptionSeverityEnum), nullable=False, default=MisconceptionSeverityEnum.MEDIUM)
-    cognitive_type = Column(String(100))  # e.g., "procedural", "conceptual", "strategic"
-
-    # Relationships
-    prerequisite_misconception_ids = Column(JSON, default=list)  # Tags of prerequisite misconceptions
-    related_misconception_ids = Column(JSON, default=list)
-
-    # Evidence patterns
-    evidence_patterns = Column(JSON, default=list)  # List of typical error patterns
-    common_triggers = Column(JSON, default=list)  # Situations that trigger this misconception
-
-    # Interventions
-    intervention_strategies = Column(JSON, default=list)  # Brief intervention approaches
-    resource_links = Column(JSON, default=list)  # Links to materials
-
-    # Metadata
-    source = Column(String(200))  # Research paper, educator input, etc.
-    verified = Column(Boolean, default=False)
-    usage_count = Column(Integer, default=0)  # How many items reference this
-
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-
-    # Relationships
-    diagnostic_items = relationship("DiagnosticItem", secondary="item_misconception_map", back_populates="target_misconceptions")
-
-    def __repr__(self):
-        return f"<Misconception {self.tag}: {self.name}>"
-
-
-# ============================================================================
 # Diagnostic Items and Probes
 # ============================================================================
+
+Misconception.diagnostic_items = relationship(
+    "DiagnosticItem",
+    secondary="item_misconception_map",
+    back_populates="target_misconceptions",
+    lazy="joined",
+)
+
 
 class DiagnosticItem(Base):
     """
@@ -173,7 +129,7 @@ class DiagnosticProbe(Base):
 
     # Parent relationship
     parent_item_id = Column(String(100), ForeignKey("diagnostic_items.item_id"), nullable=False)
-    misconception_tag = Column(String(50), ForeignKey("misconceptions.tag"), nullable=False)
+    misconception_tag = Column(String(50), ForeignKey("misconceptions.id"), nullable=False)
 
     # Content (similar to DiagnosticItem)
     stem = Column(Text, nullable=False)
@@ -252,7 +208,7 @@ class ItemMisconceptionMap(Base):
     __tablename__ = "item_misconception_map"
 
     item_id = Column(String(100), ForeignKey("diagnostic_items.item_id"), primary_key=True)
-    misconception_tag = Column(String(50), ForeignKey("misconceptions.tag"), primary_key=True)
+    misconception_tag = Column(String(50), ForeignKey("misconceptions.id"), primary_key=True)
     is_primary = Column(Boolean, default=False)  # Whether this is the main misconception
 
 
@@ -330,7 +286,7 @@ class DiagnosticResult(Base):
     form_id = Column(String(100), ForeignKey("diagnostic_forms.form_id"), nullable=False)
 
     # Findings
-    primary_misconception = Column(String(50), ForeignKey("misconceptions.tag"))
+    primary_misconception = Column(String(50), ForeignKey("misconceptions.id"))
     all_misconceptions = Column(JSON, nullable=False)  # tag → confidence
     severity = Column(SQLEnum(MisconceptionSeverityEnum), nullable=False)
 

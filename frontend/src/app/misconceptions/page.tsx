@@ -5,14 +5,46 @@ import { Button } from '../../components/ui/button';
 import { Card } from '../../components/ui/card';
 import { misconceptions, getMisconceptionsByGrade, getMisconceptionsBySeverity } from '../../mocks/misconceptions';
 import { currentUser, getLearnersByTeacher } from '../../mocks/users';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { getMisconceptions, getMisconceptionFrequency } from '../../lib/api';
 
 export default function MisconceptionsPage() {
   const [selectedMisconception, setSelectedMisconception] = useState<string | null>(null);
   const teacherLearners = getLearnersByTeacher(currentUser.id);
+  const [apiMisconceptions, setApiMisconceptions] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [usingMockData, setUsingMockData] = useState(false);
+
+  // Fetch misconceptions from backend
+  useEffect(() => {
+    async function fetchMisconceptions() {
+      try {
+        setIsLoading(true);
+        const data = await getMisconceptions().catch(() => []);
+
+        if (data && data.length > 0) {
+          setApiMisconceptions(data);
+          setUsingMockData(false);
+        } else {
+          setUsingMockData(true);
+          console.log('📊 Using mock data - no misconceptions in API yet');
+        }
+      } catch (error) {
+        console.error('Error fetching misconceptions:', error);
+        setUsingMockData(true);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    fetchMisconceptions();
+  }, []);
   
+  // Use API data if available, otherwise use mock data
+  const displayMisconceptions = apiMisconceptions.length > 0 ? apiMisconceptions : misconceptions;
+
   // Simulate misconception occurrences
-  const misconceptionData = misconceptions.map((misc) => ({
+  const misconceptionData = displayMisconceptions.map((misc) => ({
     ...misc,
     affectedLearnersCount: Math.floor(Math.random() * 15) + 3,
     occurrences: Math.floor(Math.random() * 30) + 5,
@@ -321,6 +353,9 @@ export default function MisconceptionsPage() {
     </div>
   );
 }
+
+
+
 
 
 

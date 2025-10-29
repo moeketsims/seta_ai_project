@@ -11,12 +11,12 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 
 const variantStyles: Record<Variant, string> = {
   primary:
-    'bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 focus-visible:ring-primary',
+    'bg-secondary text-white shadow-sm hover:brightness-90 focus-visible:ring-secondary focus-visible:ring-2', // UFS Maroon primary CTA
   secondary:
-    'bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/90 focus-visible:ring-secondary',
+    'bg-primary text-white shadow-sm hover:brightness-90 focus-visible:ring-secondary focus-visible:ring-2', // UFS Navy secondary
   outline:
-    'border border-neutral-200 bg-white text-neutral-700 hover:bg-neutral-50 focus-visible:ring-neutral-400',
-  ghost: 'text-neutral-600 hover:bg-neutral-100 focus-visible:ring-neutral-300'
+    'border-2 border-primary bg-transparent text-primary hover:bg-primary/5 focus-visible:ring-secondary focus-visible:ring-2', // Navy outline
+  ghost: 'text-ufs-gray-700 hover:bg-ufs-gray-100 focus-visible:ring-secondary focus-visible:ring-2'
 };
 
 const sizeStyles: Record<Size, string> = {

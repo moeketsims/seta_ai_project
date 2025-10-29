@@ -1,56 +1,76 @@
 export const colors = {
+  // UFS Official Brand Colors (Authoritative)
+  'ufs-navy': '#0F204B', // UFS Navy (Pantone 2768) - PRIMARY
+  'ufs-maroon': '#A71930', // UFS Maroon (Pantone 187) - ACCENT
+  'edu-green': '#00675A', // Education Green (Pantone 329C)
+  
+  // UFS Grays - Cool-toned professional palette
+  'ufs-gray-900': '#23272A',
+  'ufs-gray-700': '#4B5563',
+  'ufs-gray-500': '#6B7280',
+  'ufs-gray-300': '#D1D5DB',
+  'ufs-gray-200': '#E5E7EB',
+  'ufs-gray-100': '#F1F3F5',
+  
+  // Semantic colors aligned with UFS brand
   primary: {
-    DEFAULT: '#0066CC',
-    light: '#4D94FF',
-    dark: '#004C99',
+    DEFAULT: '#0F204B', // UFS Navy
+    light: '#2D4270',
+    dark: '#081429',
     foreground: '#FFFFFF',
   },
   secondary: {
-    DEFAULT: '#7C3AED',
-    light: '#A78BFA',
-    dark: '#5B21B6',
+    DEFAULT: '#A71930', // UFS Maroon
+    light: '#D4294C',
+    dark: '#7A1123',
+    foreground: '#FFFFFF',
+  },
+  education: {
+    DEFAULT: '#00675A', // Education Green
+    light: '#00967F',
+    dark: '#004A42',
     foreground: '#FFFFFF',
   },
   success: {
-    DEFAULT: '#10B981',
+    DEFAULT: '#1F8A70', // Tint of edu-green
     light: '#6EE7B7',
-    dark: '#059669',
-    foreground: '#0B4F3C',
+    dark: '#00675A',
+    foreground: '#FFFFFF',
   },
   warning: {
-    DEFAULT: '#F59E0B',
+    DEFAULT: '#C97A00', // Muted amber
     light: '#FCD34D',
-    dark: '#D97706',
+    dark: '#A86400',
     foreground: '#4C2A04',
   },
   error: {
-    DEFAULT: '#EF4444',
-    light: '#FCA5A5',
-    dark: '#DC2626',
-    foreground: '#7F1D1D',
+    DEFAULT: '#A71930', // UFS Maroon doubles as error
+    light: '#D4294C',
+    dark: '#7A1123',
+    foreground: '#FFFFFF',
   },
   info: {
-    DEFAULT: '#3B82F6',
-    light: '#93C5FD',
-    dark: '#1D4ED8',
-    foreground: '#1E3A8A',
+    DEFAULT: '#0F204B', // UFS Navy for info
+    light: '#2D4270',
+    dark: '#081429',
+    foreground: '#FFFFFF',
   },
   neutral: {
-    50: '#F9FAFB',
-    100: '#F3F4F6',
-    200: '#E5E7EB',
-    300: '#D1D5DB',
+    50: '#FAFAFA',
+    100: '#F1F3F5', // UFS Gray 100
+    200: '#E5E7EB', // UFS Gray 200
+    300: '#D1D5DB', // UFS Gray 300
     400: '#9CA3AF',
-    500: '#6B7280',
-    600: '#4B5563',
-    700: '#374151',
-    800: '#1F2937',
-    900: '#111827',
+    500: '#6B7280', // UFS Gray 500
+    600: '#4B5563', // UFS Gray 700
+    700: '#4B5563',
+    800: '#23272A', // UFS Gray 900
+    900: '#23272A',
   },
   background: {
     primary: '#FFFFFF',
-    secondary: '#F9FAFB',
-    tertiary: '#F3F4F6',
+    secondary: '#F1F3F5', // UFS Gray 100
+    tertiary: '#E5E7EB', // UFS Gray 200
   },
 } as const;
 
@@ -64,8 +84,8 @@ export const spacing = {
 
 export const typography = {
   fonts: {
-    heading: 'Poppins, Inter, system-ui, sans-serif',
-    body: 'Inter, system-ui, sans-serif',
+    heading: 'Leitura Sans, Arial, system-ui, sans-serif', // UFS official typography
+    body: 'Leitura Sans, Arial, system-ui, sans-serif',    // UFS official typography
     mono: 'JetBrains Mono, monospace',
   },
   scale: {
@@ -96,11 +116,14 @@ export const radii = {
   sm: 6,
   md: 12,
   lg: 16,
-  pill: 999
+  card: 16, // UFS standard card radius
+  chip: 9999, // Full-rounded chips
+  pill: 9999
 } as const;
 
 export const elevation = {
-  base: '0 20px 45px -20px rgba(15, 23, 42, 0.25)'
+  base: '0 20px 45px -20px rgba(15, 23, 42, 0.25)',
+  card: '0 4px 20px rgba(15, 32, 75, 0.08)' // UFS navy shadow
 } as const;
 
 export const designTokens = {

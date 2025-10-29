@@ -22,15 +22,15 @@ export function InterventionsQueue({ interventions, totalCount }: InterventionsQ
   const actualTotal = totalCount || interventions.length;
 
   const getSeverityColor = (severity: string) => {
-    if (severity === 'high') return 'bg-error-100 text-error-700 dark:bg-error-950 dark:text-error-400';
-    if (severity === 'medium') return 'bg-warning-100 text-warning-700 dark:bg-warning-950 dark:text-warning-400';
-    return 'bg-neutral-100 text-neutral-700 dark:bg-neutral-800 dark:text-neutral-400';
+    if (severity === 'high') return 'bg-[var(--ufs-maroon)]'; // Maroon for urgent
+    if (severity === 'medium') return 'bg-[var(--ufs-navy)]'; // Navy for important
+    return 'bg-ufs-gray-500'; // Gray for normal
   };
 
-  const getSeverityDot = (severity: string) => {
-    if (severity === 'high') return 'bg-error-500';
-    if (severity === 'medium') return 'bg-warning-500';
-    return 'bg-neutral-400';
+  const getSeverityBorderColor = (severity: string) => {
+    if (severity === 'high') return 'border-[var(--ufs-maroon)]';
+    if (severity === 'medium') return 'border-[var(--ufs-navy)]';
+    return 'border-ufs-gray-300';
   };
 
   const getSeverityLabel = (severity: string) => {
@@ -40,73 +40,65 @@ export function InterventionsQueue({ interventions, totalCount }: InterventionsQ
   };
 
   return (
-    <div className="bg-white dark:bg-neutral-900 rounded-xl p-5 border border-neutral-200 dark:border-neutral-800 h-full shadow-sm hover:shadow-md transition-shadow">
-      <div className="flex items-center justify-between mb-4 pb-3 border-b border-neutral-100 dark:border-neutral-800">
+    <div className="bg-white rounded-lg shadow-card p-8 h-full">
+      <div className="flex items-center justify-between mb-6 pb-4 border-b-2 border-ufs-gray-200">
         <div>
-          <h3 className="text-xl font-extrabold text-neutral-900 dark:text-neutral-100">
+          <h2 className="text-2xl font-bold text-[var(--ufs-navy)]">
             Interventions Queue
-          </h3>
-          <p className="text-xs text-neutral-500 mt-0.5">
-            {actualTotal > displayCount ? `Showing ${displayCount} of ${actualTotal}` : 'Prioritized by urgency'}
+          </h2>
+          <p className="text-sm text-ufs-gray-500 mt-1">
+            Prioritized by urgency
           </p>
         </div>
-        <span className="px-2.5 py-1 rounded-full bg-error-100 text-error-700 dark:bg-error-950 dark:text-error-400 text-xs font-bold shadow-sm">
-          {actualTotal}
-        </span>
+        <div className="text-right">
+          <div className="text-5xl font-bold text-[var(--ufs-maroon)] tabular-nums">{actualTotal}</div>
+          <div className="text-xs font-bold uppercase tracking-wider text-ufs-gray-500 mt-1">Total</div>
+        </div>
       </div>
 
       {interventions.length === 0 ? (
         <div className="py-12 text-center">
-          <div className="text-4xl mb-3">🎉</div>
-          <p className="text-neutral-600 dark:text-neutral-400 font-medium">No interventions needed!</p>
-          <p className="text-xs text-neutral-500 mt-1">All learners are on track</p>
+          <p className="text-ufs-gray-700 font-bold text-lg">No interventions needed</p>
+          <p className="text-sm text-ufs-gray-500 mt-2">All learners are on track</p>
         </div>
       ) : (
         <>
-          <div className="space-y-2.5">
+          <div className="space-y-3">
             {visibleInterventions.map((item, i) => (
               <div
                 key={i}
-                className="p-3 rounded-lg border border-neutral-200 dark:border-neutral-800 hover:border-primary-500 dark:hover:border-primary-500 hover:shadow-md transition-all group bg-neutral-50/30 dark:bg-neutral-800/30"
+                className={`relative pl-6 pr-4 py-4 rounded-lg bg-white border-l-4 ${getSeverityBorderColor(item.severity)} hover:shadow-lg transition-all cursor-pointer`}
               >
-                <div className="flex items-start gap-2.5 mb-2.5">
-                  <span className={`w-2.5 h-2.5 rounded-full ${getSeverityDot(item.severity)} mt-1 flex-shrink-0 shadow-sm`}></span>
+                <div className="flex items-start justify-between gap-3 mb-2">
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-baseline justify-between gap-2 mb-1">
-                      <p className="font-bold text-neutral-900 dark:text-neutral-100 text-sm truncate">{item.name}</p>
-                      <span className="text-[10px] text-neutral-500 flex-shrink-0 font-medium">{item.time}</span>
-                    </div>
-                    <p className="text-xs text-neutral-600 dark:text-neutral-400 mb-1">{item.grade} • {item.reason}</p>
-                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${getSeverityColor(item.severity)}`}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${getSeverityDot(item.severity)}`}></span>
+                    <p className="font-bold text-ufs-gray-900 text-base truncate">{item.name}</p>
+                    <p className="text-sm text-ufs-gray-600 mt-1">{item.grade} • {item.reason}</p>
+                  </div>
+                  <div className="flex flex-col items-end gap-1">
+                    <span className="text-xs font-bold text-ufs-gray-500">{item.time}</span>
+                    <span className={`px-2 py-1 rounded text-xs font-bold text-white ${getSeverityColor(item.severity)}`}>
                       {getSeverityLabel(item.severity)}
                     </span>
                   </div>
                 </div>
-                <div className="flex gap-2 flex-wrap">
+                <div className="flex gap-2 flex-wrap mt-3">
                   <button
-                    className="flex-1 px-3 py-2 text-xs font-semibold bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-all hover:scale-105 shadow-sm hover:shadow-md group/btn"
+                    className="flex-1 px-3 py-2 text-xs font-bold bg-[var(--ufs-navy)] text-white rounded-lg hover:brightness-90 transition-all"
                     title="Schedule a one-on-one session with this learner"
                   >
-                    <span className="flex items-center justify-center gap-1.5">
-                      📞 Schedule 1:1
-                    </span>
+                    Schedule 1:1
                   </button>
                   <button
-                    className="px-3 py-2 text-xs font-medium border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 rounded-lg hover:border-primary-500 hover:bg-primary-50 dark:hover:bg-primary-950 transition-all hover:scale-105"
+                    className="px-3 py-2 text-xs font-medium border-2 border-ufs-gray-300 text-ufs-gray-700 rounded-lg hover:border-[var(--ufs-navy)] transition-all"
                     title="Assign practice worksheets tailored to their needs"
                   >
-                    <span className="flex items-center justify-center gap-1.5">
-                      📝 Assign Practice
-                    </span>
+                    Assign Practice
                   </button>
                   <button
-                    className="px-3 py-2 text-xs font-medium border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 rounded-lg hover:border-secondary-500 hover:bg-secondary-50 dark:hover:bg-secondary-950 transition-all hover:scale-105"
+                    className="px-3 py-2 text-xs font-medium border-2 border-ufs-gray-300 text-ufs-gray-700 rounded-lg hover:border-[var(--ufs-navy)] transition-all"
                     title="Add to group session with similar learners"
                   >
-                    <span className="flex items-center justify-center gap-1.5">
-                      👥 Group Session
-                    </span>
+                    Group Session
                   </button>
                 </div>
               </div>

@@ -1,32 +1,64 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { PageHeader } from '../../components/layout/page-header';
 import { Button } from '../../components/ui/button';
 import { Card } from '../../components/ui/card';
 import { Input } from '../../components/ui/input';
 import { learners, getLearnersByTeacher, currentUser, getClassById } from '../../mocks/users';
 import { learnerProfiles } from '../../mocks/analytics';
+import { getLearners } from '../../lib/api';
 
 export default function LearnersPage() {
   const teacherLearners = getLearnersByTeacher(currentUser.id);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterClass, setFilterClass] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [apiLearners, setApiLearners] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [usingMockData, setUsingMockData] = useState(false);
 
-  const filteredLearners = teacherLearners.filter((learner) => {
+  // Fetch learners from backend
+  useEffect(() => {
+    async function fetchLearners() {
+      try {
+        setIsLoading(true);
+        const data = await getLearners().catch(() => []);
+
+        if (data && data.length > 0) {
+          setApiLearners(data);
+          setUsingMockData(false);
+        } else {
+          setUsingMockData(true);
+          console.log('📊 Using mock data - no learners in API yet');
+        }
+      } catch (error) {
+        console.error('Error fetching learners:', error);
+        setUsingMockData(true);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    fetchLearners();
+  }, []);
+
+  const displayLearners = apiLearners.length > 0 ? apiLearners : teacherLearners;
+
+  const filteredLearners = displayLearners.filter((learner: any) => {
     const matchesSearch =
-      learner.firstName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      learner.lastName.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesClass = filterClass === 'all' || learner.classId === filterClass;
+      learner.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      learner.lastName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      learner.name?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesClass = filterClass === 'all' || learner.classId === filterClass || learner.class_id === filterClass;
     return matchesSearch && matchesClass;
   });
 
   const statsData = {
-    total: teacherLearners.length,
-    onTrack: Math.floor(teacherLearners.length * 0.65),
-    needsSupport: Math.floor(teacherLearners.length * 0.25),
-    atRisk: Math.floor(teacherLearners.length * 0.10),
+    total: displayLearners.length,
+    onTrack: Math.floor(displayLearners.length * 0.65),
+    needsSupport: Math.floor(displayLearners.length * 0.25),
+    atRisk: Math.floor(displayLearners.length * 0.10),
     avgPerformance: 74,
   };
 

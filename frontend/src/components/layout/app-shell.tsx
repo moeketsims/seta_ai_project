@@ -53,13 +53,13 @@ export function AppShell({ navGroups = [], children }: AppShellProps) {
           <div className="flex h-16 items-center justify-between border-b border-neutral-200 px-4 dark:border-neutral-800">
             {sidebarOpen ? (
               <div className="flex items-center gap-2">
-                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-primary-500 to-secondary-500 text-xs font-bold text-white shadow-md">
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600 text-xs font-bold text-white shadow-md ring-2 ring-primary-400/30">
                   AI
                 </span>
                 <span className="font-semibold text-sm">CAPS Math AI</span>
               </div>
             ) : (
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-primary-500 to-secondary-500 text-xs font-bold text-white shadow-md mx-auto">
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600 text-xs font-bold text-white shadow-md mx-auto ring-2 ring-primary-400/30">
                 AI
               </span>
             )}
@@ -194,7 +194,7 @@ function NavItem({
         'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200',
         collapsed ? 'justify-center' : '',
         isActive
-          ? 'bg-gradient-to-r from-primary-500 to-secondary-500 text-white shadow-lg'
+          ? 'bg-primary-600 dark:bg-primary-700 text-white shadow-lg shadow-primary-900/20'
           : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800'
       )}
       title={collapsed ? label : undefined}

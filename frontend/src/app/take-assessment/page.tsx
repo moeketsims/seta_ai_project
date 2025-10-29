@@ -1,810 +1,511 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { PageHeader } from '../../components/layout/page-header';
 import { Button } from '../../components/ui/button';
 import { Card } from '../../components/ui/card';
-import { Badge } from '../../components/ui/badge';
-import { sampleAssessments } from '../../mocks/assessments';
-import { QuestionRepresentationSuite } from '../../components/mathematics';
-import { evaluateAnswer, type EvaluationResponse } from '../../lib/api';
+import { useDiagnosticSession } from '../../hooks/useDiagnosticSession';
+import { AudioControls } from '../../components/assessment/AudioControls';
+import { VoiceInputButton } from '../../components/assessment/VoiceInputButton';
+import type { MatchedOption } from '../../hooks/useVoiceInput';
 
 export default function TakeAssessmentPage() {
-  const [assessmentStarted, setAssessmentStarted] = useState(false);
-  const [currentQuestion, setCurrentQuestion] = useState(0);
-  const [answers, setAnswers] = useState<Record<number, string>>({});
-  const [flaggedQuestions, setFlaggedQuestions] = useState<Set<number>>(new Set());
-  const [timeRemaining, setTimeRemaining] = useState(1800); // 30 minutes in seconds
-  const [showReview, setShowReview] = useState(false);
-  const [assessmentSubmitted, setAssessmentSubmitted] = useState(false);
-  const [aiEvaluations, setAiEvaluations] = useState<Record<number, EvaluationResponse>>({});
-  const [isEvaluating, setIsEvaluating] = useState(false);
-  const [evaluationError, setEvaluationError] = useState<string | null>(null);
+  // Parse URL params for learner and form ID, with defaults
+  const [learnerId, setLearnerId] = useState<string>('test-learner-001');
+  const [formId, setFormId] = useState<string>('diagnostic-form-g4-week12');
+  const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
 
-  const assessment = sampleAssessments[0]; // Use first assessment as example
+  // Diagnostic assessment hook (always enabled)
+  const diagnosticSession = useDiagnosticSession({
+    learnerId,
+    formId,
+    enabled: true,
+    autoStart: false,
+  });
 
-  // Timer countdown
+  // Parse URL params on mount
   useEffect(() => {
-    if (assessmentStarted && !assessmentSubmitted && timeRemaining > 0) {
-      const timer = setInterval(() => {
-        setTimeRemaining((prev) => {
-          if (prev <= 1) {
-            handleSubmit();
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-      return () => clearInterval(timer);
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const learner = params.get('learner_id');
+      const form = params.get('form_id');
+
+      if (learner) setLearnerId(learner);
+      if (form) setFormId(form);
     }
-  }, [assessmentStarted, assessmentSubmitted, timeRemaining]);
+  }, []);
 
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
+  // Reset selected answer when question changes
+  useEffect(() => {
+    setSelectedAnswer(null);
+  }, [diagnosticSession.currentQuestion?.stem]);
 
-  const handleAnswer = (questionIndex: number, answer: string) => {
-    setAnswers({ ...answers, [questionIndex]: answer });
-  };
+  // Voice input handler - auto-select matched answer AND auto-submit
+  const handleVoiceTranscription = (transcript: string, matchedOption?: MatchedOption) => {
+    console.log('🎤 Voice transcript:', transcript);
+    console.log('🎯 Matched option:', matchedOption);
+    console.log('📋 Current question options:', diagnosticSession.currentQuestion?.options);
 
-  const toggleFlag = (questionIndex: number) => {
-    const newFlagged = new Set(flaggedQuestions);
-    if (newFlagged.has(questionIndex)) {
-      newFlagged.delete(questionIndex);
-    } else {
-      newFlagged.add(questionIndex);
-    }
-    setFlaggedQuestions(newFlagged);
-  };
-
-  const handleSubmit = async () => {
-    if (showReview) {
-      // Evaluate all answers with AI before final submission
-      setIsEvaluating(true);
-      setEvaluationError(null);
-      const evaluations: Record<number, EvaluationResponse> = {};
-
-      try {
-        console.log('🤖 Starting AI evaluation for', assessment.questions.length, 'questions');
-
-        for (let i = 0; i < assessment.questions.length; i++) {
-          const question = assessment.questions[i];
-          const learnerAnswer = answers[i];
-
-          if (learnerAnswer) {
-            console.log(`📝 Evaluating Question ${i + 1}:`, {
-              question: question.content,
-              correctAnswer: question.correctAnswer,
-              learnerAnswer,
-              type: question.type,
-            });
-
-            const evaluation = await evaluateAnswer({
-              question_content: question.content,
-              correct_answer: question.correctAnswer,
-              learner_answer: learnerAnswer,
-              question_type: question.type,
-              max_score: question.marks,
-              grade: assessment.grade,
-            });
-
-            console.log(`✅ Question ${i + 1} evaluated:`, evaluation);
-            evaluations[i] = evaluation;
-          }
-        }
-
-        console.log('🎉 All evaluations complete:', evaluations);
-        setAiEvaluations(evaluations);
-
-        // Only proceed to results if we got evaluations
-        if (Object.keys(evaluations).length > 0) {
-          setAssessmentSubmitted(true);
-        } else {
-          throw new Error('No evaluations were generated');
-        }
-      } catch (error) {
-        console.error('❌ AI evaluation failed:', error);
-        setEvaluationError(
-          error instanceof Error
-            ? error.message
-            : 'Failed to connect to AI grading service. Please try again.'
-        );
-        // Don't proceed to results page on error
-        setIsEvaluating(false);
-      } finally {
-        setIsEvaluating(false);
-      }
-    } else {
-      setShowReview(true);
-    }
-  };
-
-  const calculateScore = () => {
-    // Use AI evaluations if available
-    if (Object.keys(aiEvaluations).length > 0) {
-      let totalScore = 0;
-      let totalMarks = 0;
-      assessment.questions.forEach((q, i) => {
-        if (aiEvaluations[i]) {
-          totalScore += aiEvaluations[i].score;
-          totalMarks += aiEvaluations[i].max_score;
-        }
-      });
-      return totalMarks > 0 ? Math.round((totalScore / totalMarks) * 100) : 0;
+    if (!diagnosticSession.currentQuestion) {
+      console.error('❌ No current question available');
+      return;
     }
 
-    // Fallback to simple correct/incorrect
-    let correct = 0;
-    assessment.questions.forEach((q, i) => {
-      if (answers[i] === q.correctAnswer) {
-        correct++;
-      }
-    });
-    return Math.round((correct / assessment.questions.length) * 100);
-  };
-
-  // Landing page
-  if (!assessmentStarted) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-neutral-50 p-4">
-        <Card className="max-w-2xl w-full p-8">
-          <div className="text-center mb-6">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 mb-4">
-              <svg
-                className="w-8 h-8 text-primary"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                />
-              </svg>
-            </div>
-            <h1 className="text-2xl font-bold mb-2">{assessment.title}</h1>
-            <p className="text-neutral-600">{assessment.description}</p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4 mb-6">
-            <div className="p-4 bg-neutral-100 rounded-lg text-center">
-              <p className="text-sm text-neutral-600 mb-1">Duration</p>
-              <p className="text-2xl font-bold">{assessment.duration} min</p>
-            </div>
-            <div className="p-4 bg-neutral-100 rounded-lg text-center">
-              <p className="text-sm text-neutral-600 mb-1">Total Marks</p>
-              <p className="text-2xl font-bold">{assessment.totalMarks}</p>
-            </div>
-            <div className="p-4 bg-neutral-100 rounded-lg text-center">
-              <p className="text-sm text-neutral-600 mb-1">Questions</p>
-              <p className="text-2xl font-bold">{assessment.questions.length}</p>
-            </div>
-            <div className="p-4 bg-neutral-100 rounded-lg text-center">
-              <p className="text-sm text-neutral-600 mb-1">Grade</p>
-              <p className="text-2xl font-bold">{assessment.grade}</p>
-            </div>
-          </div>
-
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-            <h3 className="font-semibold text-sm mb-2">📋 Instructions</h3>
-            <ul className="text-sm text-neutral-700 space-y-1">
-              <li>• Read each question carefully before answering</li>
-              <li>• You can navigate between questions using the Next/Previous buttons</li>
-              <li>• Flag questions for review if you're unsure</li>
-              <li>• Your progress is automatically saved</li>
-              <li>• You can review all answers before final submission</li>
-              <li>• Once submitted, you cannot change your answers</li>
-            </ul>
-          </div>
-
-          <Button onClick={() => setAssessmentStarted(true)} className="w-full" size="lg">
-            Start Assessment
-          </Button>
-        </Card>
-      </div>
-    );
-  }
-
-  // Submission complete
-  if (assessmentSubmitted) {
-    const score = calculateScore();
-    const misconceptions = Object.entries(aiEvaluations)
-      .filter(([_, evaluation]) => evaluation.misconception_detected)
-      .map(([index, evaluation]) => ({
-        questionIndex: parseInt(index),
-        misconception: evaluation.misconception_detected,
-        question: assessment.questions[parseInt(index)],
-      }));
-
-    if (isEvaluating) {
-      return (
-        <div className="min-h-screen flex items-center justify-center bg-neutral-50 p-4">
-          <Card className="max-w-2xl w-full p-8 text-center">
-            <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-primary/10 mb-4 animate-pulse">
-              <svg className="w-10 h-10 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <h1 className="text-2xl font-bold mb-2">Evaluating Your Answers...</h1>
-            <p className="text-neutral-600">Our AI is reviewing your responses and providing detailed feedback</p>
-          </Card>
-        </div>
+    // Check if we have a matched option
+    if (matchedOption && matchedOption.matched_option_id) {
+      // Find the option with matching ID (IDs are already "A", "B", "C", "D")
+      const actualOption = diagnosticSession.currentQuestion.options.find(
+        opt => opt.id === matchedOption.matched_option_id
       );
+
+      if (actualOption) {
+        console.log(`✅ Voice matched: ${matchedOption.matched_option_id} → ${actualOption.id} (${actualOption.text})`);
+
+        // Auto-select the matched answer
+        setSelectedAnswer(actualOption.id);
+
+        // Auto-submit after 2 second delay (gives user review time)
+        setTimeout(() => {
+          console.log('🚀 Auto-submitting answer:', actualOption.id);
+          diagnosticSession.submitAnswer(actualOption.id);
+        }, 2000);
+      } else {
+        console.error(`❌ Could not find option with ID: ${matchedOption.matched_option_id}`);
+      }
+    } else {
+      console.warn('⚠️ No match found. User must click submit manually.');
     }
+  };
+
+  // ========================================================================
+  // DIAGNOSTIC COMPLETION SCREEN
+  // ========================================================================
+  if (diagnosticSession.result) {
+    const result = diagnosticSession.result;
+    const misconceptionCount = Object.keys(result.all_misconceptions || {}).length;
+    const hasMisconceptions = misconceptionCount > 0;
+    const minutes = Math.floor(result.total_time_seconds / 60);
+    const seconds = result.total_time_seconds % 60;
+    const timeDisplay = `${minutes}:${seconds.toString().padStart(2, '0')}`;
 
     return (
-      <div className="min-h-screen bg-neutral-50 p-4">
-        <div className="max-w-4xl mx-auto">
-          <Card className="p-8 text-center mb-6">
-            <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-success/10 mb-4">
-              <svg className="w-10 h-10 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-            <h1 className="text-3xl font-bold mb-2">Assessment Completed!</h1>
-            <p className="text-neutral-600 mb-6">
-              Your assessment has been submitted and evaluated with AI
-            </p>
-
-            <div className="grid grid-cols-2 gap-4 mb-6">
-              <div className="p-6 bg-neutral-100 rounded-lg">
-                <p className="text-sm text-neutral-600 mb-1">Your Score</p>
-                <p className="text-4xl font-bold text-primary">{score}%</p>
-              </div>
-              <div className="p-6 bg-neutral-100 rounded-lg">
-                <p className="text-sm text-neutral-600 mb-1">Questions Answered</p>
-                <p className="text-4xl font-bold">
-                  {Object.keys(answers).length}/{assessment.questions.length}
-                </p>
-              </div>
-            </div>
-
-            {misconceptions.length > 0 && (
-              <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 rounded-lg p-5 mb-6 text-left shadow-md">
-                <div className="flex items-start gap-3 mb-4">
-                  <div className="flex-shrink-0 mt-0.5">
-                    <div className="w-10 h-10 rounded-full bg-amber-200 flex items-center justify-center">
-                      <span className="text-xl">🎯</span>
-                    </div>
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="font-bold text-lg text-amber-900 mb-1 flex items-center gap-2">
-                      AI-Detected Learning Opportunities
-                      <span className="text-xs bg-amber-200 text-amber-900 px-2 py-1 rounded-full font-semibold">
-                        {misconceptions.length} {misconceptions.length === 1 ? 'Area' : 'Areas'} Identified
-                      </span>
-                    </h3>
-                    <p className="text-xs text-amber-700 mb-3">
-                      Our AI identified specific CAPS curriculum misconceptions that need targeted support
-                    </p>
-                  </div>
+      <div className="min-h-screen bg-[#F1F3F5]">
+        {/* BRUTALIST HERO: Navy Block */}
+        <div className="bg-[var(--ufs-navy)] text-white px-12 py-12">
+          <div className="max-w-6xl mx-auto">
+            <div className="flex items-center justify-between mb-8">
+              <div className="flex items-center gap-6">
+                <div className="w-24 h-24 rounded-2xl bg-[var(--edu-green)] flex items-center justify-center shadow-2xl">
+                  <svg className="w-14 h-14 text-white" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
                 </div>
-
-                <div className="space-y-2">
-                  {misconceptions.map(({ questionIndex, misconception }) => (
-                    <div key={questionIndex} className="bg-white/70 border border-amber-200 rounded-lg p-3 flex items-start gap-2">
-                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-amber-100 flex items-center justify-center text-xs font-bold text-amber-800">
-                        {questionIndex + 1}
-                      </span>
-                      <div className="flex-1">
-                        <p className="text-sm font-semibold text-amber-900">{misconception}</p>
-                        <p className="text-xs text-amber-700 mt-1">Your teacher has been notified for intervention</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="mt-4 pt-4 border-t border-amber-200">
-                  <p className="text-xs text-amber-800 flex items-center gap-2">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <span className="font-medium">These are common challenges in mathematics learning. Targeted practice will help overcome them.</span>
+                <div>
+                  <h1 className="text-6xl font-bold mb-3 tracking-tight leading-none">
+                    Diagnostic Complete
+                  </h1>
+                  <p className="text-xl text-white/60 font-light">
+                    Adaptive assessment analyzed · AI-powered insights
                   </p>
                 </div>
               </div>
-            )}
-
-            <div className="space-y-3">
-              <Button className="w-full">View Detailed Feedback</Button>
-              <Button variant="outline" className="w-full">
-                Back to Dashboard
-              </Button>
+              <div className="text-right">
+                <div className="text-sm text-white/50 font-medium mb-2">SESSION ID</div>
+                <div className="text-lg font-mono text-white/80">{result.session_id.slice(-8).toUpperCase()}</div>
+              </div>
             </div>
-          </Card>
 
-          {/* Detailed AI Feedback - Enhanced Intelligence Display */}
-          {Object.keys(aiEvaluations).length > 0 ? (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between mb-2">
-                <h2 className="text-xl font-bold">🤖 AI-Powered Detailed Feedback</h2>
-                <div className="flex items-center gap-2 text-xs text-neutral-600">
-                  <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <span>Intelligent evaluation with partial credit & misconception detection</span>
+            {/* 2-column Metrics Grid with glass-morphism */}
+            <div className="grid grid-cols-2 gap-8 mt-12 max-w-2xl">
+              <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border-2 border-white/20">
+                <div className="text-xs text-white/60 font-medium mb-2 uppercase tracking-wide">Questions Answered</div>
+                <div className="text-4xl font-bold text-white mb-1">{diagnosticSession.questionsAnswered}</div>
+                <div className="text-xs text-white/50">Adaptive pathway</div>
+              </div>
+
+              <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border-2 border-white/20">
+                <div className="text-xs text-white/60 font-medium mb-2 uppercase tracking-wide">Time Taken</div>
+                <div className="text-4xl font-bold text-white mb-1">{timeDisplay}</div>
+                <div className="text-xs text-white/50">{minutes} min {seconds} sec</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Content Section with elevated cards */}
+        <div className="max-w-6xl mx-auto px-12 -mt-8 pb-16">
+          {/* Learner Feedback Card */}
+          {result.learner_feedback && (
+            <div className="bg-white rounded-3xl shadow-[0_20px_60px_-15px_rgba(15,32,75,0.15)] p-10 mb-8 border-l-8 border-[var(--edu-green)]">
+              <div className="flex items-start gap-4 mb-4">
+                <div className="w-12 h-12 rounded-full bg-[var(--edu-green)]/10 flex items-center justify-center flex-shrink-0">
+                  <span className="text-2xl">💬</span>
+                </div>
+                <div className="flex-1">
+                  <h2 className="text-2xl font-bold text-[var(--ufs-navy)] mb-2">Your Personalized Feedback</h2>
+                  <p className="text-sm text-neutral-500">Based on adaptive diagnostic analysis</p>
+                </div>
+              </div>
+              <div className="bg-[var(--edu-green)]/5 rounded-2xl p-6 border border-[var(--edu-green)]/20">
+                <p className="text-base leading-relaxed text-neutral-700">{result.learner_feedback}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Misconceptions Detected - Priority-based styling */}
+          {hasMisconceptions && (
+            <div className="bg-white rounded-3xl shadow-[0_20px_60px_-15px_rgba(167,25,48,0.15)] p-10 mb-8 border-l-8 border-[var(--ufs-maroon)]">
+              <div className="flex items-start gap-4 mb-6">
+                <div className="w-12 h-12 rounded-full bg-[var(--ufs-maroon)]/10 flex items-center justify-center flex-shrink-0">
+                  <span className="text-2xl">🎯</span>
+                </div>
+                <div className="flex-1">
+                  <h2 className="text-2xl font-bold text-[var(--ufs-navy)] mb-2 flex items-center gap-3">
+                    Learning Opportunities Identified
+                    <span className="text-sm bg-[var(--ufs-maroon)] text-white px-4 py-1.5 rounded-full font-semibold">
+                      {misconceptionCount} {misconceptionCount === 1 ? 'Area' : 'Areas'}
+                    </span>
+                  </h2>
+                  <p className="text-sm text-neutral-500">CAPS curriculum-aligned misconceptions requiring targeted support</p>
                 </div>
               </div>
 
-              {assessment.questions.map((question, i) => {
-                const evaluation = aiEvaluations[i];
-                if (!evaluation) return null;
+              <div className="space-y-4">
+                {Object.entries(result.all_misconceptions).map(([miscId, confidence]) => {
+                  const confidencePercent = Math.round((confidence as number) * 100);
+                  const isHigh = confidencePercent >= 70;
+                  const isMedium = confidencePercent >= 40 && confidencePercent < 70;
 
-                const isCorrect = evaluation.is_correct;
-                const hasPartialCredit = evaluation.partial_credit;
-                const hasMisconception = evaluation.misconception_detected;
+                  return (
+                    <div
+                      key={miscId}
+                      className={`bg-gradient-to-r ${
+                        isHigh ? 'from-red-50 to-rose-50 border-red-300' :
+                        isMedium ? 'from-amber-50 to-yellow-50 border-amber-300' :
+                        'from-blue-50 to-indigo-50 border-blue-300'
+                      } border-2 rounded-2xl p-6 flex items-start gap-4`}
+                    >
+                      <div className={`w-16 h-16 rounded-xl ${
+                        isHigh ? 'bg-red-200' :
+                        isMedium ? 'bg-amber-200' :
+                        'bg-blue-200'
+                      } flex items-center justify-center flex-shrink-0 font-bold text-lg ${
+                        isHigh ? 'text-red-900' :
+                        isMedium ? 'text-amber-900' :
+                        'text-blue-900'
+                      }`}>
+                        {confidencePercent}%
+                      </div>
 
-                return (
-                  <Card key={i} className={`p-6 border-2 ${isCorrect ? 'border-success/20' : hasMisconception ? 'border-amber-300' : 'border-danger/20'}`}>
-                    {/* Question Header */}
-                    <div className="flex items-start justify-between mb-4">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-2">
-                          <p className="font-semibold text-lg">Question {i + 1}</p>
-                          {hasPartialCredit && (
-                            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full font-medium">
-                              Partial Credit Awarded
-                            </span>
-                          )}
+                          <span className={`text-xs font-bold px-3 py-1 rounded-full ${
+                            isHigh ? 'bg-red-200 text-red-900' :
+                            isMedium ? 'bg-amber-200 text-amber-900' :
+                            'bg-blue-200 text-blue-900'
+                          }`}>
+                            {isHigh ? 'HIGH PRIORITY' : isMedium ? 'MEDIUM' : 'LOW'}
+                          </span>
+                          <span className="text-xs font-mono text-neutral-500">{miscId}</span>
                         </div>
-                        <p className="text-sm text-neutral-700 mb-3 leading-relaxed">{question.content}</p>
-
-                        {/* Answer Comparison */}
-                        <div className="grid grid-cols-1 gap-2 bg-neutral-50 rounded-lg p-3 mb-3">
-                          <div className="flex items-start gap-2">
-                            <span className="text-xs font-semibold text-neutral-500 uppercase tracking-wide min-w-[100px]">Your Answer:</span>
-                            <span className="text-sm font-mono font-semibold text-neutral-900">{answers[i]}</span>
-                          </div>
-                          {!isCorrect && (
-                            <div className="flex items-start gap-2">
-                              <span className="text-xs font-semibold text-neutral-500 uppercase tracking-wide min-w-[100px]">Expected:</span>
-                              <span className="text-sm font-mono text-neutral-700">{question.correctAnswer}</span>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Score Badge */}
-                        <div className="flex items-center gap-3">
-                          <Badge tone={isCorrect ? 'success' : hasPartialCredit ? 'warning' : 'danger'} className="text-sm">
-                            {evaluation.score}/{evaluation.max_score} points ({evaluation.percentage.toFixed(0)}%)
-                          </Badge>
-                          {isCorrect && (
-                            <span className="text-xs text-success flex items-center gap-1">
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                              </svg>
-                              Correct!
-                            </span>
-                          )}
-                        </div>
+                        <p className="font-bold text-base text-neutral-900 mb-1">Area for Growth</p>
+                        <p className="text-sm text-neutral-600 leading-relaxed">
+                          Your teacher will help you master this concept with fun activities and practice exercises!
+                        </p>
                       </div>
                     </div>
-
-                    {/* AI-Generated Feedback */}
-                    <div className={`rounded-lg p-4 mb-3 ${isCorrect ? 'bg-success/10 border border-success/20' : hasPartialCredit ? 'bg-blue-50 border border-blue-200' : 'bg-neutral-50 border border-neutral-200'}`}>
-                      <div className="flex items-start gap-2">
-                        <div className="flex-shrink-0 mt-0.5">
-                          {isCorrect ? (
-                            <div className="w-6 h-6 rounded-full bg-success/20 flex items-center justify-center">
-                              <span className="text-success text-sm">✓</span>
-                            </div>
-                          ) : hasPartialCredit ? (
-                            <div className="w-6 h-6 rounded-full bg-blue-200 flex items-center justify-center">
-                              <span className="text-blue-700 text-sm">½</span>
-                            </div>
-                          ) : (
-                            <div className="w-6 h-6 rounded-full bg-danger/20 flex items-center justify-center">
-                              <span className="text-danger text-sm">✗</span>
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-neutral-900 leading-relaxed">{evaluation.feedback}</p>
-                          {hasPartialCredit && (
-                            <p className="text-xs text-blue-700 mt-2 font-medium">
-                              💡 AI recognized correct methodology despite calculation error
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Misconception Detection Card */}
-                    {hasMisconception && (
-                      <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 rounded-lg p-4">
-                        <div className="flex items-start gap-3">
-                          <div className="flex-shrink-0 mt-1">
-                            <div className="w-8 h-8 rounded-full bg-amber-200 flex items-center justify-center">
-                              <span className="text-lg">⚠️</span>
-                            </div>
-                          </div>
-                          <div className="flex-1">
-                            <p className="text-sm font-bold text-amber-900 mb-1 flex items-center gap-2">
-                              Mathematical Misconception Detected
-                              <span className="text-xs bg-amber-200 text-amber-900 px-2 py-0.5 rounded-full font-semibold">
-                                CAPS Aligned
-                              </span>
-                            </p>
-                            <p className="text-sm font-semibold text-amber-800 mb-2">{evaluation.misconception_detected}</p>
-                            <div className="text-xs text-amber-700 bg-white/50 rounded p-2 mt-2">
-                              <p className="font-medium mb-1">📚 What this means:</p>
-                              <p className="leading-relaxed">
-                                This is a common learning gap in the South African CAPS curriculum. Your teacher will be notified
-                                and will provide targeted support to address this specific misconception.
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* AI Analysis Info */}
-                    {evaluation.ai_evaluation?.used && (
-                      <div className="mt-3 pt-3 border-t border-neutral-200">
-                        <div className="flex items-center gap-2 text-xs text-neutral-500">
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                          </svg>
-                          <span>AI-powered evaluation {evaluation.ai_evaluation.cost ? `(Cost: $${evaluation.ai_evaluation.cost.toFixed(6)})` : ''}</span>
-                        </div>
-                      </div>
-                    )}
-                  </Card>
-                );
-              })}
-            </div>
-          ) : (
-            <Card className="p-6">
-              <div className="text-center text-neutral-600">
-                <p className="text-lg font-semibold mb-2">⚠️ AI Feedback Not Available</p>
-                <p className="text-sm">
-                  The AI evaluation did not complete successfully. Your score is based on basic answer matching.
-                </p>
-                <p className="text-xs mt-2">Check the browser console (F12) for detailed error information.</p>
-              </div>
-            </Card>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // Review page
-  if (showReview) {
-    return (
-      <div className="min-h-screen bg-neutral-50 p-4">
-        <div className="max-w-4xl mx-auto">
-          <PageHeader
-            title="Review Your Answers"
-            description="Check your responses before final submission"
-          />
-
-          <Card className="p-6 mb-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold">Answer Summary</h3>
-              <span className="text-sm text-neutral-600">
-                {Object.keys(answers).length} of {assessment.questions.length} answered
-              </span>
-            </div>
-            <div className="grid grid-cols-10 gap-2">
-              {assessment.questions.map((_, i) => {
-                const isAnswered = answers[i] !== undefined;
-                const isFlagged = flaggedQuestions.has(i);
-                return (
-                  <button
-                    key={i}
-                    onClick={() => {
-                      setShowReview(false);
-                      setCurrentQuestion(i);
-                    }}
-                    className={`h-12 rounded-lg font-semibold text-sm transition-all ${
-                      isAnswered
-                        ? isFlagged
-                          ? 'bg-warning text-white'
-                          : 'bg-success text-white'
-                        : 'bg-neutral-200 text-neutral-600'
-                    }`}
-                  >
-                    {i + 1}
-                  </button>
-                );
-              })}
-            </div>
-          </Card>
-
-          <div className="space-y-4 mb-6">
-            {assessment.questions.map((question, i) => (
-              <Card key={i} className="p-4">
-                <div className="flex items-start justify-between mb-2">
-                  <div className="flex-1">
-                    <p className="font-semibold text-sm mb-2">
-                      Question {i + 1} ({question.marks} marks)
-                    </p>
-                    <p className="text-sm mb-3">{question.content}</p>
-                    {question.options && (
-                      <div className="space-y-2">
-                        {question.options.map((option, j) => (
-                          <div
-                            key={j}
-                            className={`p-2 rounded border text-sm ${
-                              answers[i] === option
-                                ? 'border-primary bg-primary/5'
-                                : 'border-neutral-200'
-                            }`}
-                          >
-                            {String.fromCharCode(65 + j)}. {option}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    {answers[i] === undefined && (
-                      <p className="text-sm text-error">Not answered</p>
-                    )}
-                  </div>
-                  {flaggedQuestions.has(i) && (
-                    <span className="text-warning text-sm">🚩 Flagged</span>
-                  )}
-                </div>
-              </Card>
-            ))}
-          </div>
-
-          {evaluationError && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
-              <p className="text-sm font-semibold text-red-900 mb-1">⚠️ AI Evaluation Error</p>
-              <p className="text-sm text-red-800">{evaluationError}</p>
-              <p className="text-xs text-red-600 mt-2">
-                Please check your internet connection and try again. If the problem persists, contact support.
-              </p>
-            </div>
-          )}
-
-          <div className="flex gap-4">
-            <Button variant="outline" onClick={() => setShowReview(false)} className="flex-1">
-              Continue Editing
-            </Button>
-            <Button onClick={handleSubmit} className="flex-1" disabled={isEvaluating}>
-              {isEvaluating ? 'Evaluating...' : 'Submit & Get AI Feedback'}
-            </Button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Main assessment interface
-  const question = assessment.questions[currentQuestion];
-  const progress = Math.round(((currentQuestion + 1) / assessment.questions.length) * 100);
-
-  return (
-    <div className="min-h-screen bg-neutral-50">
-      {/* Top Bar */}
-      <div className="bg-white border-b border-neutral-200 sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="font-semibold">{assessment.title}</h2>
-            <div
-              className={`text-lg font-bold ${
-                timeRemaining < 300 ? 'text-error' : 'text-neutral-700'
-              }`}
-            >
-              ⏱️ {formatTime(timeRemaining)}
-            </div>
-          </div>
-          <div className="flex items-center gap-4 text-sm">
-            <span className="text-neutral-600">
-              Question {currentQuestion + 1} of {assessment.questions.length}
-            </span>
-            <div className="flex-1 h-2 bg-neutral-200 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-primary transition-all"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-            <span className="text-neutral-600">{progress}% Complete</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="max-w-4xl mx-auto px-4 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Question */}
-          <div className="lg:col-span-3">
-            <Card className="p-8">
-              <div className="flex items-start justify-between mb-6">
-                <div>
-                  <span className="text-sm font-medium text-neutral-600">
-                    Question {currentQuestion + 1}
-                  </span>
-                  <span className="ml-4 text-sm text-neutral-600">
-                    {question.marks} {question.marks === 1 ? 'mark' : 'marks'}
-                  </span>
-                </div>
-                <button
-                  onClick={() => toggleFlag(currentQuestion)}
-                  className={`text-2xl ${
-                    flaggedQuestions.has(currentQuestion) ? 'text-warning' : 'text-neutral-300'
-                  }`}
-                >
-                  🚩
-                </button>
-              </div>
-
-              <p className="text-lg mb-6">{question.content}</p>
-
-              {/* Visual Representations */}
-              <QuestionRepresentationSuite
-                question={question}
-                onInteraction={(representationType, action, data) => {
-                  console.log('Representation interaction:', {
-                    representationType,
-                    action,
-                    data,
-                    questionId: question.id,
-                  });
-                }}
-              />
-
-              {/* Answer Options */}
-              {question.type === 'multiple_choice' && question.options && (
-                <div className="space-y-3">
-                  {question.options.map((option, i) => (
-                    <label
-                      key={i}
-                      className={`flex items-center gap-3 p-4 border-2 rounded-lg cursor-pointer transition-all hover:border-primary ${
-                        answers[currentQuestion] === option
-                          ? 'border-primary bg-primary/5'
-                          : 'border-neutral-200'
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name={`question-${currentQuestion}`}
-                        value={option}
-                        checked={answers[currentQuestion] === option}
-                        onChange={(e) => handleAnswer(currentQuestion, e.target.value)}
-                        className="w-5 h-5"
-                      />
-                      <span className="flex-1">
-                        <span className="font-semibold mr-2">
-                          {String.fromCharCode(65 + i)}.
-                        </span>
-                        {option}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              )}
-
-              {question.type === 'numeric' && (
-                <div>
-                  <input
-                    type="number"
-                    value={answers[currentQuestion] || ''}
-                    onChange={(e) => handleAnswer(currentQuestion, e.target.value)}
-                    className="w-full px-4 py-3 border-2 border-neutral-300 rounded-lg text-lg focus:border-primary focus:outline-none"
-                    placeholder="Enter your answer"
-                  />
-                </div>
-              )}
-
-              {question.type === 'true_false' && (
-                <div className="space-y-3">
-                  {['True', 'False'].map((option) => (
-                    <label
-                      key={option}
-                      className={`flex items-center gap-3 p-4 border-2 rounded-lg cursor-pointer transition-all hover:border-primary ${
-                        answers[currentQuestion] === option
-                          ? 'border-primary bg-primary/5'
-                          : 'border-neutral-200'
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name={`question-${currentQuestion}`}
-                        value={option}
-                        checked={answers[currentQuestion] === option}
-                        onChange={(e) => handleAnswer(currentQuestion, e.target.value)}
-                        className="w-5 h-5"
-                      />
-                      <span className="flex-1">{option}</span>
-                    </label>
-                  ))}
-                </div>
-              )}
-
-              {/* Navigation */}
-              <div className="flex items-center justify-between mt-8 pt-6 border-t border-neutral-200">
-                <Button
-                  variant="outline"
-                  onClick={() => setCurrentQuestion(Math.max(0, currentQuestion - 1))}
-                  disabled={currentQuestion === 0}
-                >
-                  ← Previous
-                </Button>
-                {currentQuestion === assessment.questions.length - 1 ? (
-                  <Button onClick={() => setShowReview(true)}>Review Answers</Button>
-                ) : (
-                  <Button
-                    onClick={() =>
-                      setCurrentQuestion(
-                        Math.min(assessment.questions.length - 1, currentQuestion + 1)
-                      )
-                    }
-                  >
-                    Next →
-                  </Button>
-                )}
-              </div>
-            </Card>
-          </div>
-
-          {/* Question Palette */}
-          <div className="lg:col-span-1">
-            <Card className="p-4 sticky top-24">
-              <h3 className="font-semibold text-sm mb-3">Question Palette</h3>
-              <div className="grid grid-cols-5 lg:grid-cols-4 gap-2 mb-4">
-                {assessment.questions.map((_, i) => {
-                  const isAnswered = answers[i] !== undefined;
-                  const isFlagged = flaggedQuestions.has(i);
-                  const isCurrent = i === currentQuestion;
-                  return (
-                    <button
-                      key={i}
-                      onClick={() => setCurrentQuestion(i)}
-                      className={`h-10 rounded font-semibold text-sm transition-all ${
-                        isCurrent
-                          ? 'bg-primary text-white ring-2 ring-primary ring-offset-2'
-                          : isAnswered
-                          ? isFlagged
-                            ? 'bg-warning text-white'
-                            : 'bg-success text-white'
-                          : 'bg-neutral-200 text-neutral-600 hover:bg-neutral-300'
-                      }`}
-                    >
-                      {i + 1}
-                    </button>
                   );
                 })}
               </div>
-              <div className="space-y-2 text-xs">
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 bg-success rounded" />
-                  <span>Answered</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 bg-neutral-200 rounded" />
-                  <span>Not Answered</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 bg-warning rounded" />
-                  <span>Flagged</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 bg-primary rounded" />
-                  <span>Current</span>
+
+              <div className="mt-6 pt-6 border-t-2 border-neutral-200">
+                <div className="flex items-start gap-3 bg-neutral-50 rounded-xl p-4">
+                  <svg className="w-5 h-5 text-[var(--ufs-navy)] flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <p className="text-sm text-neutral-700 leading-relaxed">
+                    <span className="font-semibold">Learning is a journey!</span> Your teacher will create personalized activities with games,
+                    visual aids, and one-on-one support to help you become a math superstar.
+                  </p>
                 </div>
               </div>
-            </Card>
+            </div>
+          )}
+
+          {/* Teacher Summary Card */}
+          {result.teacher_summary && (
+            <div className="bg-white rounded-3xl shadow-[0_20px_60px_-15px_rgba(15,32,75,0.15)] p-10 mb-8 border-l-8 border-[var(--ufs-navy)]">
+              <div className="flex items-start gap-4 mb-4">
+                <div className="w-12 h-12 rounded-full bg-[var(--ufs-navy)]/10 flex items-center justify-center flex-shrink-0">
+                  <span className="text-2xl">👨‍🏫</span>
+                </div>
+                <div className="flex-1">
+                  <h2 className="text-2xl font-bold text-[var(--ufs-navy)] mb-2">Teacher Report</h2>
+                  <p className="text-sm text-neutral-500">Professional analysis for intervention planning</p>
+                </div>
+              </div>
+              <div className="bg-neutral-50 rounded-2xl p-6">
+                <p className="text-sm leading-relaxed text-neutral-700 whitespace-pre-wrap">{result.teacher_summary}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Action Button */}
+          <div className="flex justify-center">
+            <button
+              onClick={() => window.location.href = '/'}
+              className="px-12 py-5 rounded-2xl bg-[var(--ufs-maroon)] text-white hover:brightness-110 transition-all font-bold text-lg shadow-[0_10px_40px_-10px_rgba(167,25,48,0.4)] hover:shadow-[0_15px_50px_-10px_rgba(167,25,48,0.5)]"
+            >
+              Return to Dashboard
+            </button>
           </div>
         </div>
       </div>
+    );
+  }
+
+  // ========================================================================
+  // DIAGNOSTIC QUESTION INTERFACE
+  // ========================================================================
+  if (diagnosticSession.isActive && diagnosticSession.currentQuestion) {
+    const question = diagnosticSession.currentQuestion;
+    const progress = diagnosticSession.visitedNodes.length > 0 ? (diagnosticSession.visitedNodes.length / 6) * 100 : 0;
+
+    return (
+      <div className="min-h-screen bg-[#F1F3F5]">
+        {/* Top Bar with UFS Navy */}
+        <div className="bg-[var(--ufs-navy)] border-b-4 border-[var(--ufs-maroon)] sticky top-0 z-10">
+          <div className="max-w-4xl mx-auto px-6 py-4">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h2 className="font-bold text-white text-lg">Adaptive Diagnostic Assessment</h2>
+                <p className="text-sm text-white/60">AI-powered misconception detection</p>
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="text-sm text-white/80 bg-white/10 px-4 py-2 rounded-lg">
+                  Question <span className="font-bold">{diagnosticSession.questionsAnswered + 1}</span>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="flex-1 h-2 bg-white/20 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-[var(--edu-green)] transition-all"
+                  style={{ width: `${Math.min(progress, 100)}%` }}
+                />
+              </div>
+              <span className="text-sm text-white/80 font-medium">{Math.round(progress)}%</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Main Content */}
+        <div className="max-w-4xl mx-auto px-6 py-8">
+          <Card className="p-8 border-2 border-[var(--ufs-navy)]">
+            {/* Audio Controls for TTS Question Read-Aloud */}
+            <div className="mb-6">
+              <AudioControls
+                text={question.stem}
+                voice="nova"
+                autoPlay={false}
+                showSettings={true}
+                className="mb-6"
+              />
+            </div>
+
+            <div className="mb-6">
+              <div className="inline-block px-3 py-1 rounded-full bg-[var(--edu-green)]/10 text-[var(--edu-green)] text-xs font-bold mb-4">
+                ADAPTIVE QUESTION
+              </div>
+              {question.context && (
+                <div className="mb-4 p-4 bg-blue-50 border-l-4 border-blue-400 rounded">
+                  <p className="text-sm text-neutral-700">{question.context}</p>
+                </div>
+              )}
+              <p className="text-xl leading-relaxed text-[var(--ufs-navy)] font-medium">{question.stem}</p>
+            </div>
+
+            {question.visualAidUrl && (
+              <div className="mb-6">
+                <img src={question.visualAidUrl} alt="Visual aid" className="max-w-full rounded-lg border-2 border-neutral-200" />
+              </div>
+            )}
+
+            {/* Answer Options */}
+            <div className="space-y-3">
+              {question.options.map((option, i) => (
+                <label
+                  key={option.id}
+                  className={`flex items-center gap-4 p-5 border-2 rounded-xl cursor-pointer transition-all hover:border-[var(--ufs-maroon)] hover:bg-[var(--ufs-maroon)]/5 group ${
+                    selectedAnswer === option.id ? 'border-[var(--ufs-maroon)] bg-[var(--ufs-maroon)]/5' : ''
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="diagnostic-question"
+                    value={option.id}
+                    checked={selectedAnswer === option.id}
+                    onChange={(e) => setSelectedAnswer(e.target.value)}
+                    className="w-5 h-5 text-[var(--ufs-maroon)] focus:ring-[var(--ufs-maroon)]"
+                  />
+                  <span className="flex-1 text-base group-hover:text-[var(--ufs-navy)] font-medium">
+                    <span className="font-bold mr-3 text-[var(--ufs-navy)]">
+                      {String.fromCharCode(65 + i)}.
+                    </span>
+                    {option.text}
+                  </span>
+                </label>
+              ))}
+            </div>
+
+            {/* Voice Input Section */}
+            <div className="mt-6 pt-6 border-t-2 border-neutral-200">
+              <div className="text-center mb-4">
+                <p className="text-sm text-neutral-600 font-medium mb-2">
+                  Or answer using your voice
+                </p>
+              </div>
+              <VoiceInputButton
+                questionOptions={question.options.map((opt) => ({
+                  option_id: opt.id,  // Use existing ID (A, B, C, D)
+                  value: opt.text,
+                }))}
+                questionStem={question.stem}
+                onTranscriptionComplete={handleVoiceTranscription}
+                size="lg"
+              />
+            </div>
+
+            {/* Submit Button */}
+            <div className="mt-8 pt-6 border-t-2 border-neutral-200 flex justify-end">
+              <Button
+                onClick={() => {
+                  if (selectedAnswer) {
+                    diagnosticSession.submitAnswer(selectedAnswer);
+                  }
+                }}
+                className="bg-[var(--ufs-maroon)] hover:brightness-110 px-8"
+                size="lg"
+                disabled={diagnosticSession.isLoading || !selectedAnswer}
+              >
+                {diagnosticSession.isLoading ? 'Analyzing...' : 'Submit Answer'}
+              </Button>
+            </div>
+
+            {diagnosticSession.error && (
+              <div className="mt-4 bg-red-50 border-2 border-red-200 rounded-xl p-4">
+                <p className="text-sm font-semibold text-red-900">Error submitting answer</p>
+                <p className="text-sm text-red-700">{diagnosticSession.error.message}</p>
+              </div>
+            )}
+          </Card>
+
+          {/* Progress Indicators */}
+          <div className="mt-6 grid grid-cols-3 gap-4">
+            <div className="bg-white rounded-xl p-4 border-2 border-neutral-200 text-center">
+              <p className="text-xs text-neutral-500 mb-1 uppercase font-medium">Questions</p>
+              <p className="text-2xl font-bold text-[var(--ufs-navy)]">{diagnosticSession.questionsAnswered + 1}</p>
+            </div>
+            <div className="bg-white rounded-xl p-4 border-2 border-neutral-200 text-center">
+              <p className="text-xs text-neutral-500 mb-1 uppercase font-medium">Time</p>
+              <p className="text-2xl font-bold text-[var(--ufs-navy)]">
+                {Math.floor(diagnosticSession.totalTimeSeconds / 60)}:{(diagnosticSession.totalTimeSeconds % 60).toString().padStart(2, '0')}
+              </p>
+            </div>
+            <div className="bg-white rounded-xl p-4 border-2 border-neutral-200 text-center">
+              <p className="text-xs text-neutral-500 mb-1 uppercase font-medium">Suspected</p>
+              <p className="text-2xl font-bold text-[var(--ufs-maroon)]">
+                {Object.keys(diagnosticSession.suspectedMisconceptions).length}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ========================================================================
+  // DIAGNOSTIC LANDING PAGE
+  // ========================================================================
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-[#F1F3F5] p-4">
+      <Card className="max-w-2xl w-full p-8 border-2 border-[var(--ufs-navy)]">
+        <div className="text-center mb-6">
+          <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-[var(--ufs-navy)] mb-6">
+            <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+            </svg>
+          </div>
+          <div className="inline-block px-4 py-1 rounded-full bg-[var(--edu-green)] text-white text-xs font-bold mb-4">
+            AI-POWERED ADAPTIVE ASSESSMENT
+          </div>
+          <h1 className="text-3xl font-bold mb-3 text-[var(--ufs-navy)]">Diagnostic Assessment</h1>
+          <p className="text-neutral-600 leading-relaxed">
+            This adaptive assessment will identify mathematical misconceptions and create a personalized learning pathway for you.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 mb-6">
+          <div className="p-4 bg-neutral-100 rounded-xl text-center border-2 border-neutral-200">
+            <p className="text-xs text-neutral-600 mb-1 font-medium uppercase">Assessment Type</p>
+            <p className="text-xl font-bold text-[var(--ufs-navy)]">Adaptive</p>
+          </div>
+          <div className="p-4 bg-neutral-100 rounded-xl text-center border-2 border-neutral-200">
+            <p className="text-xs text-neutral-600 mb-1 font-medium uppercase">Est. Duration</p>
+            <p className="text-xl font-bold text-[var(--ufs-navy)]">3-5 min</p>
+          </div>
+          <div className="p-4 bg-neutral-100 rounded-xl text-center border-2 border-neutral-200">
+            <p className="text-xs text-neutral-600 mb-1 font-medium uppercase">Questions</p>
+            <p className="text-xl font-bold text-[var(--ufs-navy)]">3-6 items</p>
+          </div>
+          <div className="p-4 bg-neutral-100 rounded-xl text-center border-2 border-neutral-200">
+            <p className="text-xs text-neutral-600 mb-1 font-medium uppercase">Grade Level</p>
+            <p className="text-xl font-bold text-[var(--ufs-navy)]">4</p>
+          </div>
+        </div>
+
+        <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-5 mb-6">
+          <h3 className="font-bold text-sm mb-3 text-[var(--ufs-navy)]">How It Works</h3>
+          <ul className="text-sm text-neutral-700 space-y-2 leading-relaxed">
+            <li className="flex items-start gap-2">
+              <span className="text-[var(--edu-green)] font-bold">•</span>
+              Questions adapt based on your answers
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-[var(--edu-green)] font-bold">•</span>
+              AI analyzes your thinking patterns in real-time
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-[var(--edu-green)] font-bold">•</span>
+              Identifies specific misconceptions with high precision
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-[var(--edu-green)] font-bold">•</span>
+              Your teacher receives detailed intervention recommendations
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-[var(--edu-green)] font-bold">•</span>
+              Results guide your personalized learning pathway
+            </li>
+          </ul>
+        </div>
+
+        {diagnosticSession.error && (
+          <div className="bg-red-50 border-2 border-red-200 rounded-xl p-4 mb-4">
+            <p className="text-sm font-semibold text-red-900 mb-1">Error Starting Session</p>
+            <p className="text-sm text-red-700">{diagnosticSession.error.message}</p>
+          </div>
+        )}
+
+        <Button
+          onClick={() => diagnosticSession.startSession()}
+          className="w-full bg-[var(--ufs-maroon)] hover:brightness-110"
+          size="lg"
+          disabled={diagnosticSession.isLoading}
+        >
+          {diagnosticSession.isLoading ? 'Starting...' : 'Start Diagnostic Assessment'}
+        </Button>
+      </Card>
     </div>
   );
 }
-
-
-
-
-
-
-
-
-
-
 

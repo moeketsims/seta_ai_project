@@ -270,3 +270,65 @@ class LearningPathway(Base):
     skill_ids = Column(JSON, default=[])  # Ordered list of skill IDs
     completion_rate = Column(Float, default=0.0)
     estimated_duration = Column(Integer, default=16)  # weeks
+
+# ============================================================================
+# AI-Generated Questions System
+# ============================================================================
+
+class AIGeneratedQuestion(Base):
+    """AI-generated CAPS-compliant mathematics questions."""
+    __tablename__ = "ai_generated_questions"
+
+    id = Column(String, primary_key=True, index=True)
+    item_id = Column(String, unique=True, nullable=False, index=True)
+    stem = Column(Text, nullable=False)
+    correct_answer_option = Column(String, nullable=False)
+    correct_answer_value = Column(String, nullable=False)
+    correct_answer_reasoning = Column(Text)
+    distractors = Column(Text, nullable=False)  # JSON string
+    grade_level = Column(Integer, default=4)
+    caps_topic = Column(String, default="Numbers, Operations & Relationships")
+    caps_objective = Column(String)
+    difficulty_level = Column(String, nullable=False)
+    prerequisite_skills = Column(Text)  # JSON string
+    estimated_time_seconds = Column(Integer, default=45)
+    generated_at = Column(DateTime, default=datetime.utcnow)
+    generated_by = Column(String, default="openai-gpt4")
+    validated = Column(Boolean, default=False)
+    validation_notes = Column(Text)
+    usage_count = Column(Integer, default=0)
+    success_rate = Column(Float, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class AIGeneratedMisconception(Base):
+    """Misconceptions detected through AI-generated question distractors."""
+    __tablename__ = "ai_generated_misconceptions"
+
+    id = Column(String, primary_key=True, index=True)
+    misconception_tag = Column(String, unique=True, nullable=False, index=True)
+    question_id = Column(String, ForeignKey("ai_generated_questions.id", ondelete="CASCADE"), nullable=False)
+    description = Column(Text, nullable=False)
+    distractor_option = Column(String, nullable=False)
+    rationale = Column(Text, nullable=False)
+    confidence_weight = Column(Float, default=0.5)
+    remediation_strategy = Column(Text)
+    grade_level = Column(Integer, default=4)
+    caps_topic = Column(String, default="Numbers, Operations & Relationships")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class AdaptiveDecisionTree(Base):
+    """Decision tree for adaptive question routing."""
+    __tablename__ = "adaptive_decision_tree"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    form_id = Column(String, nullable=False, index=True)
+    from_node_id = Column(String, nullable=False, index=True)
+    option_selected = Column(String, nullable=False)
+    to_node_id = Column(String, nullable=True)  # NULL = terminal node
+    misconception_tag = Column(String, nullable=True)
+    confidence_delta = Column(Float, default=0.0)
+    difficulty_progression = Column(String, nullable=False)  # increase, maintain, decrease, terminal
+    created_at = Column(DateTime, default=datetime.utcnow)

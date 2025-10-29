@@ -1,4 +1,5 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Poppins:wght@500;600;700&display=swap');
+/* UFS Brand Typography: Leitura Sans (fallback to Arial per brand guidelines) */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -7,25 +8,41 @@
 @layer base {
   :root {
     color-scheme: light;
-    background-color: theme('colors.neutral.50');
-    font-family: theme('fontFamily.body');
-    --shadow-elevation: theme('boxShadow.elevation');
+    background-color: #F1F3F5; /* UFS Gray 100 - never pure white */
+    font-family: 'Leitura Sans', Arial, Helvetica, sans-serif;
+    
+    /* UFS Brand Token CSS Variables (Authoritative) */
+    --ufs-navy: #0F204B;
+    --ufs-maroon: #A71930;
+    --edu-green: #00675A;
+    --ufs-gray-900: #23272A;
+    --ufs-gray-700: #4B5563;
+    --ufs-gray-500: #6B7280;
+    --ufs-gray-300: #D1D5DB;
+    --ufs-gray-200: #E5E7EB;
+    --ufs-gray-100: #F1F3F5;
+    
+    /* UFS Design System Tokens */
+    --radius-card: 16px;
+    --radius-chip: 9999px;
+    --shadow-card: 0 4px 20px rgba(15, 32, 75, 0.08);
+    --shadow-elevation: 0 20px 45px -20px rgba(15, 23, 42, 0.25);
   }
 
   .dark {
     color-scheme: dark;
-    background-color: theme('colors.neutral.900');
+    background-color: #1A1D1F; /* Dark mode still uses near-black */
   }
 
   body {
     margin: 0;
     min-height: 100vh;
     background-color: inherit;
-    color: theme('colors.neutral.800');
+    color: var(--ufs-gray-900);
   }
 
   .dark body {
-    color: theme('colors.neutral.100');
+    color: #F1F3F5;
   }
 
   h1,
@@ -34,11 +51,73 @@
   h4,
   h5,
   h6 {
-    font-family: theme('fontFamily.heading');
+    font-family: 'Leitura Sans', Arial, Helvetica, sans-serif;
   }
 
   code,
   pre {
     font-family: theme('fontFamily.mono');
+  }
+  
+  /* Brutalist animations */
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  @keyframes fadeInUp {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes slideDown {
+    from {
+      opacity: 0;
+      transform: translateY(-20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes bounceGentle {
+    0%, 100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-5px);
+    }
+  }
+
+  .animate-fadeIn {
+    animation: fadeIn 0.6s ease-out forwards;
+    opacity: 0;
+  }
+
+  .animate-fadeInUp {
+    animation: fadeInUp 0.6s ease-out forwards;
+    opacity: 0;
+  }
+
+  .animate-slideDown {
+    animation: slideDown 0.6s ease-out forwards;
+    opacity: 0;
+  }
+
+  .animate-bounce-gentle {
+    animation: bounceGentle 2s ease-in-out infinite;
   }
 }

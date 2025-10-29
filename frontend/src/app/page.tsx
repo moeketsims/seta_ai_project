@@ -1,13 +1,17 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '../components/ui/button';
 import { currentUser } from '../mocks/users';
 import { ClassHealthHeatmap } from '../components/dashboard/class-health-heatmap';
 import { InterventionsQueue } from '../components/dashboard/interventions-queue';
-import { LearningFunnel } from '../components/dashboard/learning-funnel';
-import { KPIBullets } from '../components/dashboard/kpi-bullets';
-import { MisconceptionRadar } from '../components/dashboard/misconception-radar';
+import { WeeklySnapshot } from '../components/dashboard/weekly-snapshot';
+import {
+  getAtRiskLearners,
+  getInterventions,
+  getSkillHeatmap,
+  getDashboardInsights
+} from '../lib/api';
 
 // Fixed mock data (no Math.random() to avoid hydration issues)
 const CLASSES = ['Grade 4A', 'Grade 4B', 'Grade 5A', 'Grade 7A', 'Grade 7B', 'Grade 8B', 'Grade 9A'];
@@ -97,6 +101,42 @@ const misconceptions = [
 export default function OverviewPage() {
   const [selectedClass, setSelectedClass] = useState('All');
   const [timeframe, setTimeframe] = useState('This Week');
+  const [apiInterventions, setApiInterventions] = useState<any[]>([]);
+  const [apiAtRisk, setApiAtRisk] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [usingMockData, setUsingMockData] = useState(false);
+
+  // Fetch data from backend on mount
+  useEffect(() => {
+    async function fetchDashboardData() {
+      try {
+        setIsLoading(true);
+
+        // Try to fetch real data from API
+        const [interventionsData, atRiskData] = await Promise.all([
+          getInterventions().catch(() => []),
+          getAtRiskLearners().catch(() => [])
+        ]);
+
+        if (interventionsData.length > 0 || atRiskData.length > 0) {
+          setApiInterventions(interventionsData);
+          setApiAtRisk(atRiskData);
+          setUsingMockData(false);
+        } else {
+          // Use mock data as fallback
+          setUsingMockData(true);
+          console.log('📊 Using mock data - no data available from API yet');
+        }
+      } catch (error) {
+        console.error('Error fetching dashboard data:', error);
+        setUsingMockData(true);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    fetchDashboardData();
+  }, [selectedClass, timeframe]);
 
   const greeting = `Welcome back, ${currentUser.firstName}`;
   const today = new Date().toLocaleDateString('en-ZA', {
@@ -106,23 +146,58 @@ export default function OverviewPage() {
     year: 'numeric',
   });
 
+  // Use API data if available, otherwise use mock data
+  const displayInterventions = apiInterventions.length > 0 ? apiInterventions : interventions;
+
   return (
-    <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950">
-      {/* Global Header Bar */}
-      <div className="bg-white dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800 px-6 py-4 mb-6">
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          {/* Class Filter */}
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">Class:</span>
+    <div className="space-y-12 pb-12">
+      {/* BRUTALIST HERO: Massive Navy Block */}
+      <div className="-mx-6 -mt-6 mb-16">
+        <div className="bg-[var(--ufs-navy)] text-white px-12 py-16">
+          <div className="max-w-7xl mx-auto">
+            <div className="flex items-end justify-between">
+              <div>
+                <h1 className="text-6xl font-bold mb-4 tracking-tight leading-tight">
+                  {greeting}
+                </h1>
+                <p className="text-xl text-white/60 font-light">
+                  {today} · Last updated 5 min ago
+                </p>
+              </div>
+              <div className="flex gap-4 items-center">
+                <select
+                  value={timeframe}
+                  onChange={(e) => setTimeframe(e.target.value)}
+                  className="px-5 py-3 rounded-lg border-2 border-white/20 bg-transparent text-white font-medium hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/40 transition-all cursor-pointer"
+                >
+                  <option className="bg-[var(--ufs-navy)] text-white">Today</option>
+                  <option className="bg-[var(--ufs-navy)] text-white">This Week</option>
+                  <option className="bg-[var(--ufs-navy)] text-white">This Month</option>
+                  <option className="bg-[var(--ufs-navy)] text-white">This Term</option>
+                </select>
+                <button className="px-8 py-3 rounded-lg bg-[var(--ufs-maroon)] text-white hover:brightness-90 transition-all font-bold text-sm shadow-xl">
+                  Download Summary
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* BRUTALIST FILTERS */}
+      <div className="flex items-center justify-between mb-12 pb-6 border-b-2 border-ufs-gray-200">
+        <div className="flex items-center gap-8">
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-ufs-gray-500 mb-2">Class Filter</label>
             <div className="flex gap-2">
               {['All', '7A', '7B', '8B', '9A'].map((cls) => (
                 <button
                   key={cls}
                   onClick={() => setSelectedClass(cls)}
-                  className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                  className={`px-5 py-2.5 text-sm font-bold transition-all rounded-lg ${
                     selectedClass === cls
-                      ? 'bg-primary-600 text-white'
-                      : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-700'
+                      ? 'bg-[var(--ufs-maroon)] text-white'
+                      : 'border-2 border-ufs-gray-300 text-ufs-gray-700 hover:border-[var(--ufs-navy)] hover:text-[var(--ufs-navy)]'
                   }`}
                 >
                   {cls}
@@ -130,100 +205,40 @@ export default function OverviewPage() {
               ))}
             </div>
           </div>
-
-          {/* Timeframe & Actions */}
-          <div className="flex items-center gap-3">
-            <select
-              value={timeframe}
-              onChange={(e) => setTimeframe(e.target.value)}
-              className="px-4 py-2 text-sm font-medium border border-neutral-300 dark:border-neutral-700 rounded-lg bg-white dark:bg-neutral-900 text-neutral-900 dark:text-neutral-100 hover:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500 transition-colors"
-            >
-              <option>Today</option>
-              <option>This Week</option>
-              <option>This Month</option>
-              <option>This Term</option>
-            </select>
-
-            {/* Split Button for Download */}
-            <div className="flex">
-              <Button size="sm" className="bg-primary-600 text-white hover:bg-primary-700 rounded-r-none">
-                Download Summary
-              </Button>
-              <button className="px-2 bg-primary-700 text-white hover:bg-primary-800 rounded-r-lg border-l border-primary-800">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-            </div>
-          </div>
         </div>
       </div>
 
-      {/* Container */}
-      <div className="px-6 pb-6">
-        {/* One-Line Hero */}
-        <div className="mb-6 pb-4 border-b border-neutral-200 dark:border-neutral-800">
-          <p className="text-neutral-900 dark:text-neutral-100 text-base">
-            <span className="font-semibold">{greeting}</span> – {today} •{' '}
-            <span className="text-neutral-500">Last updated 5 min ago</span> •{' '}
-            <span className="text-neutral-500">Source: CAPS Math AI</span>
-          </p>
+      {/* BRUTALIST GRID - Generous Spacing */}
+      <div className="grid grid-cols-12 gap-8 mb-16">
+        <div className="col-span-12 lg:col-span-8">
+          <ClassHealthHeatmap 
+            classes={selectedClass === 'All' ? CLASSES : CLASSES.filter(c => c.includes(selectedClass))} 
+            topics={TOPICS} 
+            data={selectedClass === 'All' ? heatmapData : heatmapData.filter((_, i) => CLASSES[i].includes(selectedClass))} 
+          />
         </div>
+        <div className="col-span-12 lg:col-span-4">
+          <InterventionsQueue
+            interventions={selectedClass === 'All' ? displayInterventions : displayInterventions.filter(i => i.grade === selectedClass)}
+          />
+          {usingMockData && (
+            <div className="mt-2 text-xs text-center text-gray-500">
+              Using mock data (API has no data yet)
+            </div>
+          )}
+        </div>
+      </div>
 
-        {/* Priority Attention Queue - Full Width */}
-        <div className="mb-6 bg-gradient-to-r from-error-50 to-warning-50 dark:from-error-950 dark:to-warning-950 border-l-4 border-error-500 rounded-xl p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <span className="text-lg">⚠️</span>
-            <h2 className="text-sm font-bold text-neutral-900 dark:text-neutral-100 uppercase tracking-wide">
-              Requires Your Attention Now
-            </h2>
-          </div>
-          <div className="flex flex-wrap gap-3">
-            <button className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-neutral-900 rounded-lg hover:shadow-md transition-all border border-error-300 dark:border-error-800 group">
-              <span className="font-bold text-error-600 dark:text-error-400 text-lg">{interventions.length}</span>
-              <span className="text-neutral-900 dark:text-neutral-100 font-medium">urgent interventions</span>
-              <span className="text-xs text-neutral-500">≈{interventions.length * 3} min</span>
-              <span className="ml-1 text-neutral-400 group-hover:text-primary-600 transition-colors">→</span>
-            </button>
-            <button className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-neutral-900 rounded-lg hover:shadow-md transition-all border border-warning-300 dark:border-warning-800 group">
-              <span className="font-bold text-warning-600 dark:text-warning-400 text-lg">3</span>
-              <span className="text-neutral-900 dark:text-neutral-100 font-medium">classes &lt;60% mastery</span>
-              <span className="text-xs text-neutral-500">(7A, 8B, 9A)</span>
-              <span className="ml-1 text-neutral-400 group-hover:text-primary-600 transition-colors">→</span>
-            </button>
-            <button className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-neutral-900 rounded-lg hover:shadow-md transition-all border border-warning-300 dark:border-warning-800 group">
-              <span className="font-bold text-warning-600 dark:text-warning-400 text-lg">2</span>
-              <span className="text-neutral-900 dark:text-neutral-100 font-medium">misconception spikes</span>
-              <span className="text-xs text-neutral-500">(Equivalent Fractions)</span>
-              <span className="ml-1 text-neutral-400 group-hover:text-primary-600 transition-colors">→</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Row 2: L:8 / R:4 - Heatmap + Interventions */}
-        <div className="grid grid-cols-12 gap-6 mb-6">
-          <div className="col-span-12 lg:col-span-8">
-            <ClassHealthHeatmap classes={CLASSES} topics={TOPICS} data={heatmapData} />
-          </div>
-          <div className="col-span-12 lg:col-span-4">
-            <InterventionsQueue interventions={interventions} />
-          </div>
-        </div>
-
-        {/* Row 3: L:8 / R:4 - Funnel + KPI Bullets */}
-        <div className="grid grid-cols-12 gap-6 mb-6">
-          <div className="col-span-12 lg:col-span-8">
-            <LearningFunnel data={funnelData} />
-          </div>
-          <div className="col-span-12 lg:col-span-4">
-            <KPIBullets kpis={kpiTargets} />
-          </div>
-        </div>
-
-        {/* Row 4: Full Width - Misconceptions */}
-        <div className="mb-6">
-          <MisconceptionRadar misconceptions={misconceptions} />
-        </div>
+      {/* UNIFIED WEEKLY SNAPSHOT - Replaces 3 repetitive sections */}
+      <div className="mb-16">
+        <WeeklySnapshot
+          assigned={funnelData[0].count}
+          mastered={funnelData[funnelData.length - 1].count}
+          avgPerformance={74}
+          atRisk={5}
+          topGaps={misconceptions.map(m => ({ topic: m.topic, count: m.count }))}
+          performanceTrend={2}
+        />
       </div>
     </div>
   );

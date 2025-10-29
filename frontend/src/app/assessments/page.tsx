@@ -5,19 +5,54 @@ import { Button } from '../../components/ui/button';
 import { Card } from '../../components/ui/card';
 import { sampleAssessments, questionTemplates, sampleQuestions } from '../../mocks/assessments';
 import { currentUser } from '../../mocks/users';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { QuestionRepresentationSuite } from '../../components/mathematics';
+import { getAssessments, getAllQuestions } from '../../lib/api';
 
 export default function AssessmentsPage() {
   const [selectedAssessment, setSelectedAssessment] = useState<string | null>(null);
   const [view, setView] = useState<'list' | 'builder' | 'bank'>('list');
+  const [apiAssessments, setApiAssessments] = useState<any[]>([]);
+  const [apiQuestions, setApiQuestions] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [usingMockData, setUsingMockData] = useState(false);
 
-  const myAssessments = sampleAssessments.filter((a) => a.createdBy === currentUser.id);
-  const publishedCount = myAssessments.filter((a) => a.published).length;
-  const draftCount = myAssessments.filter((a) => !a.published).length;
+  // Fetch assessments from backend
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        setIsLoading(true);
+        const [assessments, questions] = await Promise.all([
+          getAssessments().catch(() => []),
+          getAllQuestions().catch(() => [])
+        ]);
+
+        if (assessments.length > 0 || questions.length > 0) {
+          setApiAssessments(assessments);
+          setApiQuestions(questions);
+          setUsingMockData(false);
+        } else {
+          setUsingMockData(true);
+          console.log('📊 Using mock data - no assessments in API yet');
+        }
+      } catch (error) {
+        console.error('Error fetching assessments:', error);
+        setUsingMockData(true);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    fetchData();
+  }, []);
+
+  const displayAssessments = apiAssessments.length > 0 ? apiAssessments : sampleAssessments;
+  const myAssessments = displayAssessments.filter((a: any) => a.createdBy === currentUser.id || a.created_by === currentUser.id);
+  const publishedCount = myAssessments.filter((a: any) => a.published).length;
+  const draftCount = myAssessments.filter((a: any) => !a.published).length;
 
   const selectedAssess = selectedAssessment
-    ? sampleAssessments.find((a) => a.id === selectedAssessment)
+    ? displayAssessments.find((a: any) => a.id === selectedAssessment)
     : null;
 
   if (view === 'builder') {
@@ -378,6 +413,9 @@ export default function AssessmentsPage() {
     </div>
   );
 }
+
+
+
 
 
 

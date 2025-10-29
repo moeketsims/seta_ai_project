@@ -19,10 +19,10 @@ export function ClassHealthHeatmap({ classes, topics, data }: ClassHealthHeatmap
   const [showAllIndicators, setShowAllIndicators] = useState(true);
 
   const getCellColor = (mastery: number) => {
-    if (mastery >= 80) return 'bg-success-500';
-    if (mastery >= 70) return 'bg-success-400';
-    if (mastery >= 60) return 'bg-warning-400';
-    return 'bg-error-500';
+    if (mastery >= 80) return 'bg-[var(--edu-green)]'; // Education Green
+    if (mastery >= 70) return 'bg-[var(--ufs-navy)]'; // Navy
+    if (mastery >= 60) return 'bg-[var(--ufs-navy)] opacity-50'; // Navy (muted)
+    return 'bg-[var(--ufs-maroon)]'; // Maroon for critical
   };
 
   const getAccessibilityGrade = (mastery: number) => {
@@ -45,79 +45,11 @@ export function ClassHealthHeatmap({ classes, topics, data }: ClassHealthHeatmap
   };
 
   return (
-    <div className="bg-white dark:bg-neutral-900 rounded-xl p-6 border border-neutral-200 dark:border-neutral-800 shadow-sm hover:shadow-md transition-shadow">
-      <div className="flex items-center justify-between mb-4 pb-3 border-b border-neutral-100 dark:border-neutral-800">
+    <div className="bg-white rounded-lg shadow-card p-8">
+      <div className="flex items-center justify-between mb-6 pb-4 border-b-2 border-ufs-gray-200">
         <div>
-          <h2 className="text-xl font-extrabold text-neutral-900 dark:text-neutral-100">Class Health Heatmap</h2>
-          <p className="text-xs text-neutral-500 mt-0.5">Click any cell to see student roster • Hover for details</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-neutral-500">(this week)</span>
-          <button
-            onClick={() => setShowOnlyIssues(!showOnlyIssues)}
-            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
-              showOnlyIssues
-                ? 'bg-primary-600 text-white shadow-sm'
-                : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-700'
-            }`}
-          >
-            {showOnlyIssues ? '✓ Issues Only' : 'Show Issues Only'}
-          </button>
-          <button
-            onClick={() => setShowAllIndicators(!showAllIndicators)}
-            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
-              showAllIndicators
-                ? 'bg-secondary-600 text-white shadow-sm'
-                : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200 dark:hover:bg-neutral-700'
-            }`}
-            title="Toggle detailed view with all badges"
-          >
-            {showAllIndicators ? 'Simple View' : 'Detailed View'}
-          </button>
-        </div>
-      </div>
-
-      {/* Enhanced Legend */}
-      <div className="mb-4 p-3 bg-neutral-50 dark:bg-neutral-800/30 rounded-lg border border-neutral-200 dark:border-neutral-700">
-        <div className="flex items-start justify-between gap-6 text-xs flex-wrap">
-          <div>
-            <p className="font-semibold text-neutral-700 dark:text-neutral-300 mb-2">Performance Levels</p>
-            <div className="flex items-center gap-3 flex-wrap">
-              <span className="flex items-center gap-1.5">
-                <span className="w-5 h-5 rounded bg-success-500 flex items-center justify-center text-white text-[10px] font-bold">A</span>
-                <span className="text-neutral-600 dark:text-neutral-400">Excellent (≥80%)</span>
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="w-5 h-5 rounded bg-success-400 flex items-center justify-center text-white text-[10px] font-bold">B</span>
-                <span className="text-neutral-600 dark:text-neutral-400">Good (70-79%)</span>
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="w-5 h-5 rounded bg-warning-400 flex items-center justify-center text-white text-[10px] font-bold">C</span>
-                <span className="text-neutral-600 dark:text-neutral-400">Needs Attention (60-69%)</span>
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="w-5 h-5 rounded bg-error-500 flex items-center justify-center text-white text-[10px] font-bold">D</span>
-                <span className="text-neutral-600 dark:text-neutral-400">Critical (&lt;60%)</span>
-              </span>
-            </div>
-          </div>
-          <div>
-            <p className="font-semibold text-neutral-700 dark:text-neutral-300 mb-2">Indicators</p>
-            <div className="flex items-center gap-3 flex-wrap">
-              <span className="flex items-center gap-1.5">
-                <span className="w-5 h-5 bg-white dark:bg-neutral-900 text-error-600 dark:text-error-400 text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-error-500 shadow-sm">5</span>
-                <span className="text-neutral-600 dark:text-neutral-400">Learners below 60%</span>
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="text-success-600 dark:text-success-400 font-bold">↑3%</span>
-                <span className="text-neutral-600 dark:text-neutral-400">Improving</span>
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="text-error-600 dark:text-error-400 font-bold">↓5%</span>
-                <span className="text-neutral-600 dark:text-neutral-400">Declining</span>
-              </span>
-            </div>
-          </div>
+          <h2 className="text-2xl font-bold text-[var(--ufs-navy)]">Class Health Heatmap</h2>
+          <p className="text-sm text-ufs-gray-500 mt-1">CAPS curriculum performance • This week</p>
         </div>
       </div>
       <div className="overflow-x-auto">
@@ -156,44 +88,14 @@ export function ClassHealthHeatmap({ classes, topics, data }: ClassHealthHeatmap
                     };
 
                     return (
-                      <td key={j} className="p-1.5">
+                      <td key={j} className="p-2">
                         <button
-                          className={`relative w-full min-h-[64px] p-3 ${getCellColor(cell.mastery)} rounded-lg flex flex-col items-center justify-center text-white font-bold hover:ring-2 hover:ring-primary-500 hover:scale-105 transition-all cursor-pointer shadow-sm hover:shadow-md group`}
-                          title={`${cls} - ${topic}\n${cell.mastery}% class average\n${cell.below} learners below 60%\nGrade: ${getAccessibilityGrade(cell.mastery)}`}
-                          aria-label={`${cls} ${topic}: ${cell.mastery}% mastery, ${cell.below} learners need help`}
+                          className={`relative w-full min-h-[80px] p-4 ${getCellColor(cell.mastery)} rounded-lg flex flex-col items-center justify-center text-white font-bold hover:shadow-lg transition-all cursor-pointer`}
+                          title={`${cls} - ${topic}: ${cell.mastery}%`}
+                          aria-label={`${cls} ${topic}: ${cell.mastery}% mastery`}
                         >
-                          {/* Accessibility Grade Badge - Top Left */}
-                          <span className="absolute top-1.5 left-1.5 w-5 h-5 bg-white/20 backdrop-blur-sm text-white text-[10px] font-extrabold rounded flex items-center justify-center">
-                            {getAccessibilityGrade(cell.mastery)}
-                          </span>
-
-                          {/* Main Percentage - Hero */}
-                          <div className="flex items-baseline justify-center">
-                            <span className="text-2xl font-extrabold leading-none">{cell.mastery}%</span>
-                            {getTrendIcon(cell.trend)}
-                          </div>
-
-                          {/* Icon Indicator */}
-                          <span className="text-xs opacity-80 mt-1">{getIcon(cell.mastery)}</span>
-
-                          {/* Learner Count Badge - Conditional */}
-                          {showAllIndicators && cell.below > 0 && (
-                            <span className="absolute -top-1.5 -right-1.5 min-w-[24px] h-6 px-1.5 bg-white dark:bg-neutral-900 text-error-600 dark:text-error-400 text-[11px] font-bold rounded-full flex items-center justify-center border-2 border-error-500 shadow-md">
-                              {cell.below}
-                            </span>
-                          )}
-
-                          {/* Enhanced Hover Tooltip */}
-                          <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 px-3 py-2 bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10 shadow-lg">
-                            <div className="font-bold mb-1">{cls} • {topic}</div>
-                            <div>{cell.mastery}% mastery • Grade {getAccessibilityGrade(cell.mastery)}</div>
-                            {cell.below > 0 && <div className="text-error-400 dark:text-error-600 font-semibold mt-1">⚠ {cell.below} learners need support</div>}
-                            {cell.trend && (
-                              <div className={cell.trend > 0 ? 'text-success-400 dark:text-success-600' : 'text-error-400 dark:text-error-600'}>
-                                {cell.trend > 0 ? '↑' : '↓'} {Math.abs(cell.trend)}% from last week
-                              </div>
-                            )}
-                          </span>
+                          {/* BRUTALIST: Just the huge number - MINIMAL */}
+                          <span className="text-3xl font-bold leading-none tabular-nums">{cell.mastery}<span className="text-lg">%</span></span>
                         </button>
                       </td>
                     );
@@ -203,6 +105,28 @@ export function ClassHealthHeatmap({ classes, topics, data }: ClassHealthHeatmap
             })}
           </tbody>
         </table>
+      </div>
+      
+      {/* BRUTALIST LEGEND - Clean & Minimal */}
+      <div className="mt-8 pt-6 border-t-2 border-ufs-gray-200">
+        <div className="flex items-center gap-8 text-sm flex-wrap">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-8 rounded-lg bg-[var(--edu-green)]"></div>
+            <span className="text-ufs-gray-900 font-bold">80-100%</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-8 rounded-lg bg-[var(--ufs-navy)]"></div>
+            <span className="text-ufs-gray-700 font-medium">70-79%</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-8 rounded-lg bg-[var(--ufs-navy)] opacity-50"></div>
+            <span className="text-ufs-gray-500 font-medium">60-69%</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-8 rounded-lg bg-[var(--ufs-maroon)]"></div>
+            <span className="text-[var(--ufs-maroon)] font-bold">Below 60%</span>
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -290,6 +290,7 @@ const loadInsights = async () => {
 - Temperature tuning for consistency
 - Error handling with fallbacks
 - Cost tracking per operation
+- Centralized OpenAI integration wrapper (`backend/app/integrations/openai_client.py`) that reads credentials from `.env` and enforces JSON-mode completions for diagnostic item generation
 
 ### **API Endpoints**
 

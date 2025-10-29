@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from enum import Enum
@@ -120,6 +120,41 @@ class Question(QuestionBase):
 
     class Config:
         from_attributes = True
+        populate_by_name = True  # Allow using both snake_case and camelCase
+
+    @field_validator('options', mode='before')
+    @classmethod
+    def parse_options(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, str):
+            import json
+            return json.loads(v)
+        return v
+
+    @field_validator('skill_ids', mode='before')
+    @classmethod
+    def parse_skill_ids(cls, v):
+        if isinstance(v, str):
+            import json
+            return json.loads(v)
+        return v
+
+    @field_validator('misconception_ids', mode='before')
+    @classmethod
+    def parse_misconception_ids(cls, v):
+        if isinstance(v, str):
+            import json
+            return json.loads(v)
+        return v
+
+    @field_validator('representations', mode='before')
+    @classmethod
+    def parse_representations(cls, v):
+        if isinstance(v, str):
+            import json
+            return json.loads(v)
+        return v
 
 class QuestionAnalysisSchema(BaseModel):
     questionId: str
@@ -147,6 +182,14 @@ class Assessment(AssessmentBase):
 
     class Config:
         from_attributes = True
+
+    @field_validator('topics', mode='before')
+    @classmethod
+    def parse_topics(cls, v):
+        if isinstance(v, str):
+            import json
+            return json.loads(v)
+        return v
 
 class AssessmentWithQuestions(Assessment):
     questions: List[Question]

@@ -313,3 +313,142 @@ export async function diagnoseError(request: DiagnosticRequest): Promise<Diagnos
 export async function getDashboardInsights(request: DashboardInsightsRequest): Promise<DashboardInsightsResponse> {
   return post<DashboardInsightsResponse>('/api/v1/ai/dashboard-insights', request);
 }
+
+// ============================================================================
+// Analytics API Functions
+// ============================================================================
+
+export async function getAnalyticsMetrics(teacherId: string) {
+  return get<any>(`/api/v1/analytics/metrics?teacher_id=${teacherId}`);
+}
+
+export async function getPerformanceTrend(classId?: string, teacherId?: string) {
+  const params = new URLSearchParams();
+  if (classId) params.append('class_id', classId);
+  if (teacherId) params.append('teacher_id', teacherId);
+  return get<any>(`/api/v1/analytics/performance-trend?${params.toString()}`);
+}
+
+export async function getSkillMastery(classId?: string, teacherId?: string) {
+  const params = new URLSearchParams();
+  if (classId) params.append('class_id', classId);
+  if (teacherId) params.append('teacher_id', teacherId);
+  return get<any>(`/api/v1/analytics/skill-mastery?${params.toString()}`);
+}
+
+export async function getMisconceptionFrequency(classId?: string, teacherId?: string) {
+  const params = new URLSearchParams();
+  if (classId) params.append('class_id', classId);
+  if (teacherId) params.append('teacher_id', teacherId);
+  return get<any>(`/api/v1/analytics/misconception-frequency?${params.toString()}`);
+}
+
+export async function getLearnerDistribution(classId?: string, teacherId?: string) {
+  const params = new URLSearchParams();
+  if (classId) params.append('class_id', classId);
+  if (teacherId) params.append('teacher_id', teacherId);
+  return get<any>(`/api/v1/analytics/learner-distribution?${params.toString()}`);
+}
+
+export async function getSkillHeatmap(classId?: string, teacherId?: string) {
+  const params = new URLSearchParams();
+  if (classId) params.append('class_id', classId);
+  if (teacherId) params.append('teacher_id', teacherId);
+  return get<any>(`/api/v1/analytics/skill-heatmap?${params.toString()}`);
+}
+
+// ============================================================================
+// Learner Management API Functions
+// ============================================================================
+
+export async function getLearners() {
+  return get<any>('/api/v1/learners/');
+}
+
+export async function getLearner(learnerId: string) {
+  return get<any>(`/api/v1/learners/${learnerId}`);
+}
+
+export async function getLearnerSkills(learnerId: string) {
+  return get<any>(`/api/v1/learners/${learnerId}/skills`);
+}
+
+// ============================================================================
+// Assessment API Functions
+// ============================================================================
+
+export async function getAssessments() {
+  return get<any>('/api/v1/assessments/');
+}
+
+export async function getAssessment(assessmentId: string) {
+  return get<any>(`/api/v1/assessments/${assessmentId}`);
+}
+
+export async function getAllQuestions() {
+  return get<any>('/api/v1/assessments/questions/all');
+}
+
+export async function getQuestion(questionId: string) {
+  return get<any>(`/api/v1/assessments/questions/${questionId}`);
+}
+
+// ============================================================================
+// Diagnostic API Functions
+// ============================================================================
+
+export async function getAtRiskLearners() {
+  return get<any>('/api/v1/diagnostic/at-risk');
+}
+
+export async function getWeeklyDiagnostic(assessmentId: string) {
+  return get<any>(`/api/v1/diagnostic/weekly/${assessmentId}`);
+}
+
+export async function getLearnerDiagnosticResults(learnerId: string) {
+  return get<any>(`/api/v1/diagnostic-ai/learner/${learnerId}/diagnostic-results`);
+}
+
+// ============================================================================
+// Misconception API Functions
+// ============================================================================
+
+export async function getMisconceptions() {
+  return get<any>('/api/v1/misconceptions/');
+}
+
+export async function analyzeClassMisconceptions(request: any) {
+  return post<any>('/api/v1/ai/class-misconceptions', request);
+}
+
+// ============================================================================
+// Intervention API Functions
+// ============================================================================
+
+export async function getInterventions() {
+  return get<any>('/api/v1/interventions/');
+}
+
+export async function predictIntervention(request: any) {
+  return post<any>('/api/v1/ai/predict-intervention', request);
+}
+
+// ============================================================================
+// Skills & Pathways API Functions
+// ============================================================================
+
+export async function getSkills() {
+  return get<any>('/api/v1/skills/');
+}
+
+export async function getPathway(pathwayId: string) {
+  return get<any>(`/api/v1/skills/pathway/${pathwayId}`);
+}
+
+// ============================================================================
+// AI Analysis API Functions
+// ============================================================================
+
+export async function analyzeClassPatterns(request: any) {
+  return post<any>('/api/v1/ai/analyze-class-patterns', request);
+}
