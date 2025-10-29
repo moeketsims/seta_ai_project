@@ -5,8 +5,8 @@ answer evaluation, misconception detection, and content generation.
 """
 
 from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
+from pydantic import BaseModel, Field, ConfigDict
+from typing import Optional, List, Dict, Any, Literal
 from datetime import datetime
 
 from app.services.ai_service import get_ai_service, AIServiceError
@@ -49,6 +49,221 @@ class AIResponse(BaseModel):
     response_time: Optional[float] = None
     timestamp: str
     error: Optional[str] = None
+
+
+class NarrationMetric(BaseModel):
+    """Individual metric surfaced to the LLM."""
+
+    label: str
+    value: str
+    emphasis: Optional[Literal["positive", "negative", "neutral"]] = None
+    context: Optional[str] = None
+
+
+class NarrationCallout(BaseModel):
+    """Optional callout or annotation for the widget."""
+
+    title: str
+    detail: str
+
+
+class GenerateNarrationRequest(BaseModel):
+    """Payload sent from the dashboard widget to request narration copy."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    widget_id: str = Field(..., alias="widgetId")
+    widget_label: str = Field(..., alias="widgetLabel")
+    audience: Literal["teacher", "leader", "analyst"]
+    timeframe: Optional[str] = None
+    focus: Optional[str] = None
+    summary: str
+    metrics: List[NarrationMetric]
+    callouts: Optional[List[NarrationCallout]] = None
+    recommendations: Optional[List[str]] = None
+    data_timestamp: Optional[str] = Field(None, alias="dataTimestamp")
+
+
+class NarrationResponse(BaseModel):
+    """LLM generated narration transcript for a dashboard widget."""
+
+    transcript: str
+    usage: Optional[AIUsageStats] = None
+    cost: Optional[float] = None
+    model: str
+    timestamp: str
+
+
+class NarrationChatTurn(BaseModel):
+    """One exchange in the narration follow-up chat."""
+
+    role: Literal["user", "assistant"]
+    content: str
+
+
+class NarrationChatRequest(BaseModel):
+    """Follow-up question anchored to a narration payload."""
+
+    payload: GenerateNarrationRequest
+    question: str
+    history: List[NarrationChatTurn] = Field(default_factory=list)
+
+
+class NarrationChatResponse(BaseModel):
+    """AI response to a follow-up narration question."""
+
+    answer: str
+    usage: Optional[AIUsageStats] = None
+    cost: Optional[float] = None
+    model: str
+    timestamp: str
+
+
+def _build_narration_prompt(request: GenerateNarrationRequest) -> str:
+    """Convert the structured dashboard payload into a natural-language prompt."""
+
+    lines: List[str] = []
+    lines.append(f"Widget: {request.widget_label}")
+    lines.append(f"Audience: {request.audience}")
+    if request.timeframe:
+        lines.append(f"Timeframe: {request.timeframe}")
+    if request.focus:
+        lines.append(f"Focus: {request.focus}")
+    if request.data_timestamp:
+        lines.append(f"Data timestamp: {request.data_timestamp}")
+
+    lines.append("Summary: " + request.summary)
+
+    if request.metrics:
+        lines.append("Metrics:")
+        for metric in request.metrics:
+            detail = f"- {metric.label}: {metric.value}"
+            if metric.context:
+                detail += f" ({metric.context})"
+            if metric.emphasis:
+                detail += f" | emphasis: {metric.emphasis}"
+            lines.append(detail)
+
+    if request.callouts:
+        lines.append("Callouts:")
+        for callout in request.callouts:
+            lines.append(f"- {callout.title}: {callout.detail}")
+
+    if request.recommendations:
+        lines.append("Proposed actions:")
+        for rec in request.recommendations:
+            lines.append(f"- {rec}")
+
+    return "\n".join(lines)
+
+
+def _build_followup_messages(
+    ai_service,
+    payload: GenerateNarrationRequest,
+    question: str,
+    history: List[NarrationChatTurn],
+) -> List[Dict[str, str]]:
+    """Compose chat completion messages for a follow-up narration question."""
+
+    context_prompt = _build_narration_prompt(payload)
+
+    messages: List[Dict[str, str]] = [
+        ai_service.create_system_message(
+            "You are an instructional coach helping teachers interpret dashboard data. "
+            "Answer concisely (≤120 words), reference only provided metrics, and end with 'Next Step:' guidance."
+        ),
+        ai_service.create_user_message(
+            "Dashboard context:\n" + context_prompt
+        ),
+        ai_service.create_assistant_message(
+            "Understood. I will answer questions about this dashboard context."
+        ),
+    ]
+
+    for turn in history:
+        if turn.role == "assistant":
+            messages.append(ai_service.create_assistant_message(turn.content))
+        else:
+            messages.append(ai_service.create_user_message(turn.content))
+
+    messages.append(ai_service.create_user_message(question))
+    return messages
+
+
+@router.post("/dashboard-narration", response_model=NarrationResponse)
+async def generate_dashboard_narration(request: GenerateNarrationRequest):
+    """Generate a teacher-friendly explanation for a dashboard widget."""
+
+    try:
+        ai_service = get_ai_service()
+
+        system_prompt = (
+            "You are an instructional coach who explains analytics to South African teachers. "
+            "Keep language clear, concise, and action oriented. Reference only the numbers provided. "
+            "If data indicates concern, suggest classroom moves. Use two short paragraphs; include a final line titled 'Next Step:' "
+            "with one actionable suggestion."  # ensures consistent structure
+        )
+
+        user_prompt = _build_narration_prompt(request)
+
+        completion = ai_service.get_completion(
+            messages=[
+                ai_service.create_system_message(system_prompt),
+                ai_service.create_user_message(user_prompt),
+            ],
+            max_tokens=400,
+            temperature=0.6,
+        )
+
+        transcript = completion["content"].strip()
+
+        return NarrationResponse(
+            transcript=transcript,
+            usage=AIUsageStats(**completion["usage"]),
+            cost=completion["cost"],
+            model=completion["model"],
+            timestamp=completion["timestamp"],
+        )
+
+    except AIServiceError as exc:
+        raise HTTPException(status_code=503, detail=f"AI service error: {exc}")
+    except Exception as exc:  # pragma: no cover - defensive
+        raise HTTPException(status_code=500, detail=f"Failed to generate narration: {exc}")
+
+
+@router.post("/dashboard-narration/chat", response_model=NarrationChatResponse)
+async def continue_dashboard_narration(request: NarrationChatRequest):
+    """Answer a follow-up question about a dashboard widget."""
+
+    try:
+        ai_service = get_ai_service()
+        messages = _build_followup_messages(
+            ai_service=ai_service,
+            payload=request.payload,
+            question=request.question,
+            history=request.history,
+        )
+
+        completion = ai_service.get_completion(
+            messages=messages,
+            max_tokens=380,
+            temperature=0.65,
+        )
+
+        answer = completion["content"].strip()
+
+        return NarrationChatResponse(
+            answer=answer,
+            usage=AIUsageStats(**completion["usage"]),
+            cost=completion["cost"],
+            model=completion["model"],
+            timestamp=completion["timestamp"],
+        )
+
+    except AIServiceError as exc:
+        raise HTTPException(status_code=503, detail=f"AI service error: {exc}")
+    except Exception as exc:  # pragma: no cover - defensive
+        raise HTTPException(status_code=500, detail=f"Failed to answer question: {exc}")
 
 
 # ============================================================================

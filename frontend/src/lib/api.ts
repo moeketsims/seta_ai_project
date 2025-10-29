@@ -1,3 +1,5 @@
+import type { NarrationPayload } from './narration';
+
 export type HealthResponse = {
   status: 'ok';
   timestamp: string;
@@ -195,6 +197,47 @@ export async function getAIFeatures() {
 
 export async function getAIStatus() {
   return get<any>('/api/v1/ai/status');
+}
+
+export type GenerateNarrationResponse = {
+  transcript: string;
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
+  cost?: number;
+  model: string;
+  timestamp: string;
+};
+
+export async function generateNarration(payload: NarrationPayload): Promise<GenerateNarrationResponse> {
+  return post<GenerateNarrationResponse>('/api/v1/ai/dashboard-narration', payload);
+}
+
+export type NarrationChatMessage = {
+  role: 'user' | 'assistant';
+  content: string;
+};
+
+export type NarrationChatResponse = {
+  answer: string;
+  usage?: GenerateNarrationResponse['usage'];
+  cost?: number;
+  model: string;
+  timestamp: string;
+};
+
+export async function chatNarration(
+  payload: NarrationPayload,
+  question: string,
+  history: NarrationChatMessage[]
+): Promise<NarrationChatResponse> {
+  return post<NarrationChatResponse>('/api/v1/ai/dashboard-narration/chat', {
+    payload,
+    question,
+    history,
+  });
 }
 
 // Diagnostic AI Types

@@ -21,7 +21,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useVoiceInput, QuestionOption } from './useVoiceInput';
+import { useVoiceInput } from './useVoiceInput';
 import { useTextToSpeech, TTSVoice } from './useTextToSpeech';
 import {
   parseVoiceCommand,
@@ -107,8 +107,17 @@ export function useVoiceAssessmentMode(
   const hasReadQuestion = useRef(false);
   const listeningTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const questionRef = useRef(currentQuestion);
+  const stateRef = useRef(state);
+  const isEnabledRef = useRef(isEnabled);
+  const voiceInputRef = useRef<any>(null);
+  const isPlayingTTSRef = useRef(false); // Guard against concurrent TTS calls
 
-  // Update question ref
+  // Update refs
+  useEffect(() => {
+    stateRef.current = state;
+    isEnabledRef.current = isEnabled;
+  }, [state, isEnabled]);
+
   useEffect(() => {
     questionRef.current = currentQuestion;
     if (currentQuestion && isEnabled) {
@@ -121,78 +130,282 @@ export function useVoiceAssessmentMode(
   // ========================================================================
 
   const questionText = currentQuestion
-    ? `${currentQuestion.context ? currentQuestion.context + '. ' : ''}${currentQuestion.stem}. ${currentQuestion.options.map((opt, i) => `Option ${opt.id}: ${opt.text}`).join('. ')}`
+    ? `${currentQuestion.context ? currentQuestion.context + '. ' : ''}${currentQuestion.stem}. ${currentQuestion.options.map((opt) => `Option ${opt.id}: ${opt.text}`).join('. ')}`
     : '';
 
-  const tts = useTextToSpeech({
-    text: questionText,
-    voice,
-    autoPlay: false,
-    onPlaybackComplete: () => {
-      if (isEnabled && state === 'reading_question') {
-        setState('listening');
-        setStatusMessage('Listening for your answer...');
-        startContinuousListening();
-      }
-    },
-    onError: (err) => {
-      console.error('TTS error:', err);
-      setError('Failed to read question. Please try manual mode.');
-    },
-  });
+  // Audio element ref for TTS playback
+  const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
 
   // ========================================================================
-  // Voice Input for Continuous Listening
-  // ========================================================================
-
-  const voiceInput = useVoiceInput({
-    questionOptions: currentQuestion?.options.map(opt => ({
-      option_id: opt.id,
-      value: opt.text,
-    })) || [],
-    questionStem: currentQuestion?.stem || '',
-    onTranscriptionComplete: handleTranscription,
-    onError: (err) => {
-      console.error('Voice input error:', err);
-      setError(err);
-      setState('listening'); // Return to listening
-      scheduleNextListening();
-    },
-  });
-
-  // ========================================================================
-  // Continuous Listening Loop
+  // Continuous Listening Loop (defined before playQuestionTTS to avoid reference errors)
   // ========================================================================
 
   const startContinuousListening = useCallback(() => {
-    if (!isEnabled || state === 'disabled') return;
+    console.log('🎤 startContinuousListening called');
+    console.log('📊 isEnabled:', isEnabledRef.current, 'state:', stateRef.current);
 
-    // Start recording
-    voiceInput.startRecording();
+    if (!isEnabledRef.current || stateRef.current === 'disabled') {
+      console.warn('⚠️ Skipping recording - voice mode disabled or wrong state');
+      return;
+    }
 
-    // Auto-stop after 5 seconds (allow time for full answers)
-    listeningTimeoutRef.current = setTimeout(() => {
-      voiceInput.stopRecording();
-    }, 5000);
-  }, [isEnabled, state, voiceInput]);
+    console.log('✅ Starting voice recording...');
+    // Start recording using ref
+    if (voiceInputRef.current) {
+      voiceInputRef.current.startRecording();
+
+      // Auto-stop after 5 seconds (allow time for full answers)
+      listeningTimeoutRef.current = setTimeout(() => {
+        console.log('⏱️ Auto-stopping recording after 5 seconds');
+        if (voiceInputRef.current) {
+          voiceInputRef.current.stopRecording();
+        }
+      }, 5000);
+    }
+  }, []);
 
   const scheduleNextListening = useCallback(() => {
-    if (!isEnabled) return;
+    if (!isEnabledRef.current) return;
 
     // Wait 1 second before starting next listening cycle
     setTimeout(() => {
-      if (isEnabled && (state === 'listening' || state === 'idle')) {
+      const currentState = stateRef.current;
+      if (isEnabledRef.current && (currentState === 'listening' || currentState === 'idle')) {
         startContinuousListening();
       }
     }, 1000);
-  }, [isEnabled, state, startContinuousListening]);
+  }, [startContinuousListening]);
 
   // ========================================================================
-  // Transcription Handler
+  // TTS for Question Reading
   // ========================================================================
 
-  function handleTranscription(transcript: string) {
-    if (!isEnabled || !currentQuestion) return;
+  const playQuestionTTS = useCallback(async () => {
+    if (!questionText || !isEnabledRef.current) return;
+
+    // Guard against concurrent TTS calls
+    if (isPlayingTTSRef.current) {
+      console.warn('⚠️ TTS already playing, skipping duplicate call');
+      return;
+    }
+
+    console.log('🔊 Starting TTS playback');
+    isPlayingTTSRef.current = true;
+
+    // CRITICAL: Stop any active recording before TTS to prevent audio feedback
+    if (voiceInputRef.current) {
+      console.log('🛑 Stopping active recording before TTS');
+      voiceInputRef.current.stopRecording();
+    }
+
+    // Clear any pending listening timeouts
+    if (listeningTimeoutRef.current) {
+      clearTimeout(listeningTimeoutRef.current);
+      listeningTimeoutRef.current = null;
+    }
+
+    setState('reading_question');
+    setStatusMessage('Reading question...');
+    setError(null); // Clear any previous errors
+
+    try {
+      // Fetch TTS audio from backend
+      const response = await fetch('http://localhost:8000/api/v1/audio/synthesize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: questionText,
+          voice,
+          speed: 1.0,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('TTS synthesis failed');
+      }
+
+      const audioBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
+
+      // Create and play audio
+      const audio = new Audio(audioUrl);
+      ttsAudioRef.current = audio;
+
+      audio.onended = () => {
+        console.log('🎵 TTS Playback complete');
+        URL.revokeObjectURL(audioUrl);
+        isPlayingTTSRef.current = false;
+
+        // Transition to listening with 1-second delay to let audio settle
+        if (isEnabledRef.current) {
+          console.log('✅ Transitioning to listening mode (1s delay)');
+          setState('listening');
+          setStatusMessage('Listening for your answer...');
+
+          setTimeout(() => {
+            startContinuousListening();
+          }, 1000); // Increased from 500ms to 1000ms
+        }
+      };
+
+      audio.onerror = (e) => {
+        console.error('❌ TTS playback error:', e);
+        setError('Failed to play question audio');
+        setState('idle');
+        isPlayingTTSRef.current = false;
+      };
+
+      try {
+        await audio.play();
+        console.log('▶️ TTS audio playing...');
+      } catch (playErr: any) {
+        console.error('❌ Audio play() failed:', playErr.message);
+        setError(`Audio playback blocked: ${playErr.message}. Please check browser permissions.`);
+        setState('idle');
+        isPlayingTTSRef.current = false;
+        URL.revokeObjectURL(audioUrl);
+      }
+
+    } catch (err: any) {
+      console.error('TTS error:', err);
+      setError(`Failed to read question: ${err.message}. Please try manual mode.`);
+      setState('idle');
+      isPlayingTTSRef.current = false;
+    }
+  }, [questionText, voice]); // Don't include startContinuousListening to avoid circular dependency
+
+  // ========================================================================
+  // Helper Functions (defined early to avoid reference errors)
+  // ========================================================================
+
+  function getCommandDescription(command: ParsedVoiceCommand): string {
+    if (command.type === 'answer_selection' && command.data?.optionId) {
+      return `Option ${command.data.optionId}`;
+    }
+    if (command.type === 'navigation') {
+      return command.action.replace('_', ' ');
+    }
+    return command.action;
+  }
+
+  // ========================================================================
+  // Confirmation Handlers (defined early)
+  // ========================================================================
+
+  const cancelCommand = useCallback(() => {
+    setCurrentCommand(null);
+    setState('listening');
+    scheduleNextListening();
+  }, [scheduleNextListening]);
+
+  // ========================================================================
+  // Command Execution (defined before handleTranscription)
+  // ========================================================================
+
+  const executeCommand = useCallback((command: ParsedVoiceCommand) => {
+    console.log('⚡ Executing command:', command);
+    setState('executing');
+
+    // Stop any ongoing recording
+    if (listeningTimeoutRef.current) {
+      clearTimeout(listeningTimeoutRef.current);
+    }
+    if (voiceInputRef.current) {
+      voiceInputRef.current.stopRecording();
+    }
+
+    switch (command.type) {
+      case 'answer_selection':
+        if (command.data?.optionId) {
+          setStatusMessage(`Selecting Option ${command.data.optionId}...`);
+          setTimeout(() => {
+            console.log('✅ Submitting answer:', command.data.optionId);
+            onAnswerSelected?.(command.data.optionId);
+            setState('idle');
+            setCurrentCommand(null);
+            hasReadQuestion.current = false; // Allow next question to be read
+          }, 500);
+        }
+        break;
+
+      case 'navigation':
+        if (command.action === 'repeat_question') {
+          setStatusMessage('Repeating question...');
+          // Stop current TTS if playing
+          if (ttsAudioRef.current) {
+            ttsAudioRef.current.pause();
+            ttsAudioRef.current = null;
+          }
+          hasReadQuestion.current = false;
+          setTimeout(() => playQuestionTTS(), 500);
+        } else if (command.action === 'next_question' || command.action === 'skip_question') {
+          onNavigate?.(command.action === 'skip_question' ? 'skip' : 'next');
+          setState('idle');
+          setCurrentCommand(null);
+          hasReadQuestion.current = false;
+        }
+        break;
+
+      case 'control':
+        if (command.action === 'help') {
+          onHelp?.();
+          setState('listening');
+          scheduleNextListening();
+        } else if (command.action === 'disable_voice_mode') {
+          // Will be defined later
+          setIsEnabled(false);
+          setState('disabled');
+        }
+        break;
+
+      default:
+        setError('Unknown command');
+        setState('listening');
+        scheduleNextListening();
+    }
+  }, [onAnswerSelected, onNavigate, onHelp, playQuestionTTS, scheduleNextListening]);
+
+  // ========================================================================
+  // Transcription Handler (defined before useVoiceInput to avoid reference errors)
+  // ========================================================================
+
+  const handleTranscription = useCallback((transcript: string) => {
+    console.log('🎙️ handleTranscription called with:', transcript);
+
+    if (!isEnabledRef.current || !currentQuestion) {
+      console.warn('⚠️ Ignoring transcription - voice mode disabled or no question');
+      return;
+    }
+
+    // Blocklist of common false transcriptions (TTS audio feedback)
+    const blocklist = ['you', 'thank you', 'thanks', 'thank'];
+    const normalizedTranscript = transcript.trim().toLowerCase();
+
+    // Ignore very short transcriptions (increased from 2 to 5 characters)
+    if (!transcript || transcript.trim().length < 5) {
+      console.warn('⚠️ Ignoring very short transcription (<5 chars)');
+      setState('listening');
+      // Wait 3 seconds before trying again (longer delay to avoid tight loop)
+      setTimeout(() => {
+        if (isEnabledRef.current && stateRef.current === 'listening') {
+          startContinuousListening();
+        }
+      }, 3000);
+      return;
+    }
+
+    // Ignore blocklisted phrases (likely TTS audio feedback)
+    if (blocklist.includes(normalizedTranscript)) {
+      console.warn('⚠️ Ignoring blocklisted phrase:', transcript);
+      setState('listening');
+      // Wait 3 seconds before trying again (longer delay to let audio clear)
+      setTimeout(() => {
+        if (isEnabledRef.current && stateRef.current === 'listening') {
+          startContinuousListening();
+        }
+      }, 3000);
+      return;
+    }
 
     setState('processing');
     setStatusMessage('Processing your command...');
@@ -214,79 +427,45 @@ export function useVoiceAssessmentMode(
 
       // Auto-cancel after 5 seconds if no confirmation
       setTimeout(() => {
-        if (state === 'confirming') {
+        if (stateRef.current === 'confirming') {
           cancelCommand();
         }
       }, 5000);
     } else {
-      // Low confidence - ask user to repeat
-      setError('I didn\'t understand that. Please try again.');
-      setStatusMessage('Say "Option A", "Option B", etc., or say "Help" for more commands.');
+      // Low confidence - ask user to repeat with longer delay
+      setError(`I heard "${transcript}" but didn't understand. Please say "Option A", "Option B", etc.`);
+      setStatusMessage('Waiting for your answer...');
       setState('listening');
+      // Wait 5 seconds before trying again (much longer to give user time)
+      setTimeout(() => {
+        if (isEnabledRef.current && stateRef.current === 'listening') {
+          startContinuousListening();
+        }
+      }, 5000);
+    }
+  }, [startContinuousListening, currentQuestion, executeCommand, cancelCommand]);
+
+  // ========================================================================
+  // Voice Input for Continuous Listening
+  // ========================================================================
+
+  const voiceInput = useVoiceInput({
+    questionOptions: currentQuestion?.options.map(opt => ({
+      option_id: opt.id,
+      value: opt.text,
+    })) || [],
+    questionStem: currentQuestion?.stem || '',
+    onTranscriptionComplete: handleTranscription,
+    onError: (err) => {
+      console.error('Voice input error:', err);
+      setError(err);
+      setState('listening'); // Return to listening
       scheduleNextListening();
-    }
-  }
+    },
+  });
 
-  // ========================================================================
-  // Command Execution
-  // ========================================================================
-
-  function executeCommand(command: ParsedVoiceCommand) {
-    setState('executing');
-
-    switch (command.type) {
-      case 'answer_selection':
-        if (command.data?.optionId) {
-          setStatusMessage(`Selecting Option ${command.data.optionId}...`);
-          setTimeout(() => {
-            onAnswerSelected?.(command.data.optionId);
-            setState('idle');
-            setCurrentCommand(null);
-            hasReadQuestion.current = false; // Allow next question to be read
-          }, 500);
-        }
-        break;
-
-      case 'navigation':
-        if (command.action === 'repeat_question') {
-          setStatusMessage('Repeating question...');
-          setState('reading_question');
-          tts.stop();
-          setTimeout(() => tts.play(), 500);
-        } else if (command.action === 'next_question' || command.action === 'skip_question') {
-          onNavigate?.(command.action === 'skip_question' ? 'skip' : 'next');
-          setState('idle');
-          setCurrentCommand(null);
-          hasReadQuestion.current = false;
-        }
-        break;
-
-      case 'control':
-        if (command.action === 'help') {
-          onHelp?.();
-          setState('listening');
-          scheduleNextListening();
-        } else if (command.action === 'disable_voice_mode') {
-          disable();
-        }
-        break;
-
-      default:
-        setError('Unknown command');
-        setState('listening');
-        scheduleNextListening();
-    }
-  }
-
-  function getCommandDescription(command: ParsedVoiceCommand): string {
-    if (command.type === 'answer_selection' && command.data?.optionId) {
-      return `Option ${command.data.optionId}`;
-    }
-    if (command.type === 'navigation') {
-      return command.action.replace('_', ' ');
-    }
-    return command.action;
-  }
+  // Store voiceInput in ref for access in callbacks
+  voiceInputRef.current = voiceInput;
 
   // ========================================================================
   // Enable/Disable Voice Mode
@@ -298,6 +477,7 @@ export function useVoiceAssessmentMode(
     setStatusMessage('Voice mode enabled. Preparing to read question...');
     setError(null);
     hasReadQuestion.current = false;
+    // Note: useEffect will trigger TTS when question is detected
   }, []);
 
   const disable = useCallback(() => {
@@ -305,12 +485,21 @@ export function useVoiceAssessmentMode(
     setState('disabled');
     setStatusMessage('');
     setError(null);
-    tts.stop();
+
+    // Stop TTS
+    if (ttsAudioRef.current) {
+      ttsAudioRef.current.pause();
+      ttsAudioRef.current = null;
+    }
+
+    // Stop voice recording
     voiceInput.stopRecording();
+
+    // Clear timeouts
     if (listeningTimeoutRef.current) {
       clearTimeout(listeningTimeoutRef.current);
     }
-  }, [tts, voiceInput]);
+  }, [voiceInput]);
 
   const toggle = useCallback(() => {
     if (isEnabled) {
@@ -329,19 +518,16 @@ export function useVoiceAssessmentMode(
       isEnabled &&
       currentQuestion &&
       !hasReadQuestion.current &&
-      state !== 'reading_question' &&
-      !tts.isPlaying
+      state !== 'reading_question'
     ) {
       // New question arrived - read it
       hasReadQuestion.current = true;
-      setState('reading_question');
-      setStatusMessage('Reading question...');
 
       setTimeout(() => {
-        tts.play();
+        playQuestionTTS();
       }, 500); // Small delay for smooth transition
     }
-  }, [isEnabled, currentQuestion, state, tts]);
+  }, [isEnabled, currentQuestion, state, playQuestionTTS]);
 
   // ========================================================================
   // Cleanup
@@ -352,10 +538,13 @@ export function useVoiceAssessmentMode(
       if (listeningTimeoutRef.current) {
         clearTimeout(listeningTimeoutRef.current);
       }
-      tts.stop();
+      if (ttsAudioRef.current) {
+        ttsAudioRef.current.pause();
+        ttsAudioRef.current = null;
+      }
       voiceInput.stopRecording();
     };
-  }, []);
+  }, [voiceInput]);
 
   // ========================================================================
   // Return State
@@ -376,14 +565,15 @@ export function useVoiceAssessmentMode(
         executeCommand(currentCommand);
       }
     },
-    cancelCommand: () => {
-      setCurrentCommand(null);
-      setState('listening');
-      scheduleNextListening();
-    },
+    cancelCommand,
 
-    isQuestionPlaying: tts.isPlaying,
-    stopSpeaking: tts.stop,
+    isQuestionPlaying: state === 'reading_question',
+    stopSpeaking: () => {
+      if (ttsAudioRef.current) {
+        ttsAudioRef.current.pause();
+        ttsAudioRef.current = null;
+      }
+    },
 
     isListening: voiceInput.isRecording,
     audioLevel: voiceInput.audioLevel,

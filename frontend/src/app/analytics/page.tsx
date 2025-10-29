@@ -13,11 +13,26 @@ import {
   generateSkillMasteryHeatmap,
 } from '../../mocks/analytics';
 import { currentUser, classes } from '../../mocks/users';
-import { useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { SkillRadialGroup } from '../../components/analytics/skill-radial';
 import { SkillHexagonGrid } from '../../components/analytics/skill-hexagon';
 import { MisconceptionImpact } from '../../components/analytics/misconception-impact';
 import { MisconceptionBloomberg } from '../../components/analytics/misconception-bloomberg';
+import { useNarrationPreview } from '../../hooks/useNarrationPreview';
+import {
+  createLearnerProgressPayload,
+  createPerformanceOverviewPayload,
+  createSkillMasteryPayload,
+  createEngagementSummaryPayload,
+  createMisconceptionSummaryPayload,
+  WeeklyPerformanceDetail,
+} from '../../lib/narration-builders';
+import { useNarrationTranscript } from '../../hooks/useNarrationTranscript';
+import { NarrationTranscriptPanel } from '../../components/narration/NarrationTranscriptPanel';
+import type { NarrationPayload } from '../../lib/narration';
+import { useNarrationChat } from '../../hooks/useNarrationChat';
+
+type GuardrailFn = (payload: NarrationPayload) => { ok: boolean; message?: string };
 
 export default function AnalyticsPage() {
   const [selectedClass, setSelectedClass] = useState(currentUser.classes[0]);
@@ -25,42 +40,76 @@ export default function AnalyticsPage() {
   const [viewMode, setViewMode] = useState<'overview' | 'detailed'>('overview');
   const [hoveredWeek, setHoveredWeek] = useState<number | null>(null);
   const [selectedWeek, setSelectedWeek] = useState<number | null>(null);
+  const [isTranscriptOpen, setTranscriptOpen] = useState(false);
+  const [isTranscriptMaximized, setTranscriptMaximized] = useState(false);
+  const [activePayload, setActivePayload] = useState<NarrationPayload | null>(null);
+  const [activeGuardrail, setActiveGuardrail] = useState<GuardrailFn | undefined>(undefined);
 
-  // Get class-specific analytics
-  const classAnalytics = getClassAnalytics(selectedClass);
-  const performanceTrendData = getPerformanceTrendData(selectedClass);
-  const skillMasteryData = getSkillMasteryData(selectedClass);
-  const misconceptionFrequencyData = getMisconceptionData(selectedClass);
-  const timeSpentData = getTimeSpentData(selectedClass);
+  const dataTimestamp = useMemo(() => new Date().toISOString(), [selectedClass]);
+
+  const classAnalytics = useMemo(() => getClassAnalytics(selectedClass), [selectedClass]);
+  const performanceTrendData = useMemo(
+    () => getPerformanceTrendData(selectedClass),
+    [selectedClass]
+  );
+  const skillMasteryData = useMemo(
+    () => getSkillMasteryData(selectedClass),
+    [selectedClass]
+  );
+  const misconceptionFrequencyData = useMemo(
+    () => getMisconceptionData(selectedClass),
+    [selectedClass]
+  );
+  const timeSpentData = useMemo(() => getTimeSpentData(selectedClass), [selectedClass]);
+
   const learnerProgressDistribution = classAnalytics.learnerDistribution;
-  const engagementMetrics = {
-    dailyActiveUsers: classAnalytics.dailyActiveUsers,
-    weeklyActiveUsers: classAnalytics.weeklyActiveUsers,
-    averageSessionDuration: classAnalytics.averageSessionDuration,
-    completionRate: classAnalytics.completionRate,
-  };
 
-  const heatmapData = generateSkillMasteryHeatmap(selectedClass);
+  const engagementMetrics = useMemo(
+    () => ({
+      dailyActiveUsers: classAnalytics.dailyActiveUsers,
+      weeklyActiveUsers: classAnalytics.weeklyActiveUsers,
+      averageSessionDuration: classAnalytics.averageSessionDuration,
+      completionRate: classAnalytics.completionRate,
+    }),
+    [classAnalytics]
+  );
 
-  // Enhanced weekly data with additional context (using class-specific data)
-  const weeklyDetails = performanceTrendData.datasets[0].data.map((value, i) => {
-    const weeklyLearners = Math.round(classAnalytics.totalLearners * (0.35 + Math.random() * 0.15)); // 35-50% assessed weekly
-    return {
-      week: i + 1,
-      performance: value,
-      dateRange: `Jan ${i * 7 + 1}-${i * 7 + 7}`,
-      learnersAssessed: weeklyLearners,
-      assessmentsCompleted: Math.round(weeklyLearners * (1 + Math.random() * 0.3)), // Some learners do multiple assessments
-      avgTimeSpent: engagementMetrics.averageSessionDuration + Math.floor((Math.random() - 0.5) * 10),
-      topTopic: skillMasteryData.labels[Math.floor(Math.random() * skillMasteryData.labels.length)],
-      strugglingTopic: ['Fractions', 'Equations', 'Angles', 'Probability'][Math.floor(Math.random() * 4)],
-      interventions: Math.round(learnerProgressDistribution.atRisk * (0.3 + Math.random() * 0.4)), // 30-70% of at-risk learners
-      change: i > 0 ? value - performanceTrendData.datasets[0].data[i - 1] : 0,
-    };
-  });
+  const heatmapData = useMemo(
+    () => generateSkillMasteryHeatmap(selectedClass),
+    [selectedClass]
+  );
 
-  // Previous period comparison data (consistently lower)
-  const previousPeriodData = performanceTrendData.datasets[0].data.map(v => v - 3 - Math.random() * 5);
+  const weeklyDetails = useMemo<WeeklyPerformanceDetail[]>(() => {
+    const skillLabels = skillMasteryData.labels;
+    const fallbackTopics = ['Fractions', 'Equations', 'Angles', 'Probability'];
+
+    return performanceTrendData.datasets[0].data.map((value, i) => {
+      const learnersFraction = 0.35 + (i % 3) * 0.05;
+      const weeklyLearners = Math.round(classAnalytics.totalLearners * learnersFraction);
+      const avgTimeOffset = [-8, -4, 0, 4, 8][i % 5];
+      const topTopicIndex = skillLabels.length ? i % skillLabels.length : 0;
+      const strugglingTopicIndex = fallbackTopics.length ? i % fallbackTopics.length : 0;
+      const interventionShare = 0.3 + (i % 4) * 0.1;
+
+      return {
+        week: i + 1,
+        performance: value,
+        dateRange: `Jan ${i * 7 + 1}-${i * 7 + 7}`,
+        learnersAssessed: weeklyLearners,
+        assessmentsCompleted: Math.round(weeklyLearners * (1.1 + (i % 2) * 0.1)),
+        avgTimeSpent: classAnalytics.averageSessionDuration + avgTimeOffset,
+        topTopic: skillLabels[topTopicIndex] ?? 'Key skill',
+        strugglingTopic: fallbackTopics[strugglingTopicIndex],
+        interventions: Math.round(learnerProgressDistribution.atRisk * interventionShare),
+        change: i > 0 ? value - performanceTrendData.datasets[0].data[i - 1] : 0,
+      };
+    });
+  }, [classAnalytics, learnerProgressDistribution.atRisk, performanceTrendData, skillMasteryData.labels]);
+
+  const previousPeriodData = useMemo(
+    () => performanceTrendData.datasets[0].data.map((v, i) => v - 3 - (i % 5)),
+    [performanceTrendData]
+  );
 
   // Calculate additional metrics from class analytics
   const totalLearners = classAnalytics.totalLearners;
@@ -71,8 +120,262 @@ export default function AnalyticsPage() {
   const assessmentsThisWeek = classAnalytics.assessmentsThisWeek;
   const completionTrend = Math.round((classAnalytics.completionRate - 88) * 2); // Relative to baseline 88%
 
+  const classInfo = useMemo(
+    () => classes.find((cls) => cls.id === selectedClass),
+    [selectedClass]
+  );
+  const classDisplayName = classInfo?.name ?? selectedClass;
+
+  const timeframeLabel = useMemo(() => {
+    switch (timeRange) {
+      case '4weeks':
+        return 'the last 4 weeks';
+      case 'year':
+        return 'the academic year';
+      default:
+        return 'the last 12 weeks';
+    }
+  }, [timeRange]);
+
+  const latestWeekDetail = useMemo(() => {
+    if (!weeklyDetails.length) {
+      return null;
+    }
+
+    const index = selectedWeek
+      ? Math.min(Math.max(selectedWeek - 1, 0), weeklyDetails.length - 1)
+      : weeklyDetails.length - 1;
+
+    return weeklyDetails[index];
+  }, [selectedWeek, weeklyDetails]);
+
+  const performancePayload = useMemo(() => {
+    if (!latestWeekDetail) {
+      return null;
+    }
+
+    return createPerformanceOverviewPayload({
+      className: classDisplayName,
+      timeframeLabel,
+      averagePerformance,
+      performanceTrend,
+      latestWeek: latestWeekDetail,
+      weeklySeries: weeklyDetails,
+      totalLearners,
+      targetPercent: 80,
+      dataTimestamp,
+    });
+  }, [
+    averagePerformance,
+    classDisplayName,
+    dataTimestamp,
+    latestWeekDetail,
+    weeklyDetails,
+    performanceTrend,
+    timeframeLabel,
+    totalLearners,
+  ]);
+
+  const { onTrack, needsSupport, atRisk, total } = learnerProgressDistribution;
+
+  const learnerProgressPayload = useMemo(
+    () =>
+      createLearnerProgressPayload({
+        className: classDisplayName,
+        onTrack,
+        needsSupport,
+        atRisk,
+        total,
+        dataTimestamp,
+      }),
+    [atRisk, classDisplayName, dataTimestamp, needsSupport, onTrack, total]
+  );
+
+  const skillMasteryPairs = useMemo(
+    () => {
+      const dataset = skillMasteryData.datasets[0];
+      if (!dataset) {
+        return [];
+      }
+
+      return skillMasteryData.labels.map((label, i) => ({
+        label,
+        value: dataset.data[i] ?? 0,
+      }));
+    },
+    [skillMasteryData]
+  );
+
+  const skillMasteryPayload = useMemo(
+    () =>
+      createSkillMasteryPayload({
+        className: classDisplayName,
+        skills: skillMasteryPairs,
+        dataTimestamp,
+      }),
+    [classDisplayName, dataTimestamp, skillMasteryPairs]
+  );
+
+  useNarrationPreview(performancePayload);
+  useNarrationPreview(learnerProgressPayload);
+  useNarrationPreview(skillMasteryPayload);
+
+  const engagementSummaryPayload = useMemo(
+    () =>
+      createEngagementSummaryPayload({
+        className: classDisplayName,
+        engagement: engagementMetrics,
+        completionTrend,
+        totalLearners,
+        dataTimestamp,
+      }),
+    [classDisplayName, completionTrend, dataTimestamp, engagementMetrics, totalLearners]
+  );
+
+  const misconceptionPairs = useMemo(() => {
+    const dataset = misconceptionFrequencyData.datasets[0];
+    if (!dataset) {
+      return [];
+    }
+
+    return misconceptionFrequencyData.labels.map((label, index) => ({
+      label,
+      count: dataset.data[index] ?? 0,
+    }));
+  }, [misconceptionFrequencyData]);
+
+  const misconceptionSummaryPayload = useMemo(
+    () =>
+      createMisconceptionSummaryPayload({
+        className: classDisplayName,
+        misconceptions: misconceptionPairs,
+        dataTimestamp,
+      }),
+    [classDisplayName, dataTimestamp, misconceptionPairs]
+  );
+
+  useNarrationPreview(engagementSummaryPayload);
+  useNarrationPreview(misconceptionSummaryPayload);
+
+  const performanceGuardrail = useCallback(
+    (payload: NarrationPayload) => {
+      if (!latestWeekDetail) {
+        return { ok: false, message: 'Latest week context missing.' };
+      }
+
+      const latestMetric = payload.metrics.find((metric) => metric.label === 'Latest week');
+      const learnersMetric = payload.metrics.find((metric) => metric.label === 'Learners assessed');
+
+      if (!latestMetric || !learnersMetric) {
+        return { ok: false, message: 'Narration payload missing required metrics.' };
+      }
+
+      const numericFromString = (value: string) => {
+        const cleaned = value.replace(/[^0-9.-]/g, '');
+        return Number.parseFloat(cleaned);
+      };
+
+      const latestValue = numericFromString(latestMetric.value);
+      if (!Number.isFinite(latestValue) || Math.abs(latestValue - latestWeekDetail.performance) > 0.5) {
+        return {
+          ok: false,
+          message: `Narration week performance (${latestMetric.value}) does not match source data (${latestWeekDetail.performance}%).`,
+        };
+      }
+
+      const learnersValue = Number.parseInt(learnersMetric.value.replace(/[^0-9]/g, ''), 10);
+      if (!Number.isFinite(learnersValue) || learnersValue !== latestWeekDetail.learnersAssessed) {
+        return {
+          ok: false,
+          message: `Learner count (${learnersMetric.value}) diverges from weekly data (${latestWeekDetail.learnersAssessed}).`,
+        };
+      }
+
+      if (learnersValue > totalLearners) {
+        return {
+          ok: false,
+          message: 'Learner count exceeds cohort size.',
+        };
+      }
+
+      if (!payload.summary.includes(`${averagePerformance}%`)) {
+        return {
+          ok: false,
+          message: 'Narration summary missing cohort average.',
+        };
+      }
+
+      return { ok: true };
+    },
+    [averagePerformance, latestWeekDetail, totalLearners]
+  );
+
+  const {
+    transcript: activeTranscript,
+    isGenerating: isTranscriptGenerating,
+    error: transcriptError,
+    generateTranscript,
+    reset: resetTranscript,
+  } = useNarrationTranscript(activePayload, { guardrail: activeGuardrail });
+
+  const {
+    messages: chatMessages,
+    isSending: isSendingQuestion,
+    error: chatError,
+    sendQuestion,
+    resetConversation,
+  } = useNarrationChat(activePayload, activeTranscript);
+
+  useEffect(() => {
+    if (!activeTranscript) {
+      return;
+    }
+    resetConversation();
+  }, [activeTranscript, resetConversation]);
+
+  const handleExplainClick = useCallback(
+    (payload: NarrationPayload | null, guardrail?: GuardrailFn) => {
+      if (!payload) {
+        return;
+      }
+      const clonedPayload: NarrationPayload = {
+        ...payload,
+        metrics: [...payload.metrics],
+        callouts: payload.callouts ? [...payload.callouts] : undefined,
+        recommendations: payload.recommendations ? [...payload.recommendations] : undefined,
+      };
+
+      setActiveGuardrail(() => guardrail);
+      setActivePayload(clonedPayload);
+      setTranscriptMaximized(false);
+      setTranscriptOpen(true);
+      resetTranscript();
+      resetConversation();
+      void generateTranscript(clonedPayload, guardrail ?? null);
+    },
+    [generateTranscript, resetConversation, resetTranscript]
+  );
+
+  const handleCloseTranscript = () => {
+    setTranscriptOpen(false);
+    setTranscriptMaximized(false);
+  };
+
+  const ExplainButton = ({ onClick, disabled }: { onClick: () => void; disabled?: boolean }) => (
+    <Button
+      size="sm"
+      variant="outline"
+      onClick={onClick}
+      disabled={disabled}
+      className="rounded-full border-[var(--ufs-maroon)] text-[var(--ufs-maroon)] hover:bg-[var(--ufs-maroon)] hover:text-white"
+    >
+      Explain
+    </Button>
+  );
+
   return (
-    <div className="space-y-12 pb-12">
+    <>
+      <div className="space-y-12 pb-12">
       {/* BRUTALIST HERO: Massive Navy Block - Commanding Authority */}
       <div className="-mx-6 -mt-6 mb-16">
         <div className="bg-[var(--ufs-navy)] text-white px-12 py-16">
@@ -222,6 +525,9 @@ export default function AnalyticsPage() {
       </div>
 
       {/* POLISHED SECONDARY METRICS: Clean, Bold, Consistent */}
+      <div className="flex justify-end mb-4">
+        <ExplainButton onClick={() => handleExplainClick(engagementSummaryPayload)} />
+      </div>
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4 mb-16">
         {/* Daily Active Users */}
         <div className="bg-white rounded-lg shadow-card p-7">
@@ -289,19 +595,25 @@ export default function AnalyticsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-16">
         {/* Performance Trend - Navy Monochromatic */}
         <div className="lg:col-span-2 bg-white rounded-lg shadow-card p-8">
-          <div className="flex items-end justify-between mb-8">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-8">
             <div>
               <h2 className="text-2xl font-bold text-[var(--ufs-navy)] mb-2">Performance Trend</h2>
               <p className="text-sm text-ufs-gray-500">
                 {selectedWeek ? `Week ${selectedWeek} breakdown below` : '12-week performance overview'}
               </p>
             </div>
-            <div className="text-right">
-              <div className="text-xs font-bold uppercase tracking-wider text-ufs-gray-500 mb-1">Average</div>
-              <div className="text-5xl font-bold text-[var(--ufs-navy)] tabular-nums">{averagePerformance}<span className="text-2xl">%</span></div>
-              <div className="text-sm font-bold text-[var(--ufs-navy)] mt-1">
-                {performanceTrend >= 0 ? '↑' : '↓'} {Math.abs(performanceTrend)}%
+            <div className="flex flex-col items-end gap-3 text-right md:flex-row md:items-center md:gap-6">
+              <div>
+                <div className="text-xs font-bold uppercase tracking-wider text-ufs-gray-500 mb-1">Average</div>
+                <div className="text-5xl font-bold text-[var(--ufs-navy)] tabular-nums">{averagePerformance}<span className="text-2xl">%</span></div>
+                <div className="text-sm font-bold text-[var(--ufs-navy)] mt-1">
+                  {performanceTrend >= 0 ? '↑' : '↓'} {Math.abs(performanceTrend)}%
+                </div>
               </div>
+              <ExplainButton
+                onClick={() => handleExplainClick(performancePayload, performanceGuardrail)}
+                disabled={!performancePayload}
+              />
             </div>
           </div>
 
@@ -631,7 +943,10 @@ export default function AnalyticsPage() {
 
         {/* Learner Distribution - UFS Donut */}
         <div className="bg-white rounded-lg shadow-card p-8">
-          <h2 className="text-2xl font-bold text-[var(--ufs-navy)] mb-8">Learner Progress</h2>
+          <div className="flex items-center justify-between mb-8">
+            <h2 className="text-2xl font-bold text-[var(--ufs-navy)]">Learner Progress</h2>
+            <ExplainButton onClick={() => handleExplainClick(learnerProgressPayload)} disabled={!learnerProgressPayload} />
+          </div>
           <div className="relative w-56 h-56 mx-auto mb-8">
             {/* Donut Chart - UFS Colors */}
             <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
@@ -722,11 +1037,13 @@ export default function AnalyticsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-16">
         {/* Skill Mastery - HEXAGON GRID (Extraordinary!) */}
         <div className="bg-white rounded-lg shadow-card p-8">
-          <div className="mb-8 pb-4 border-b-2 border-ufs-gray-200">
-            <h2 className="text-2xl font-bold text-[var(--ufs-navy)]">Skill Mastery</h2>
-            <p className="text-sm text-ufs-gray-500 mt-1">CAPS strands • Geometric view</p>
+          <div className="mb-8 pb-4 border-b-2 border-ufs-gray-200 flex items-center justify-between">
+            <div>
+              <h2 className="text-2xl font-bold text-[var(--ufs-navy)]">Skill Mastery</h2>
+              <p className="text-sm text-ufs-gray-500 mt-1">CAPS strands • Geometric view</p>
+            </div>
+            <ExplainButton onClick={() => handleExplainClick(skillMasteryPayload)} disabled={!skillMasteryPayload} />
           </div>
-
           <SkillHexagonGrid 
             skills={skillMasteryData.labels.map((label, i) => ({
               label: label.split(' ')[0], // Short labels
@@ -737,9 +1054,12 @@ export default function AnalyticsPage() {
 
         {/* Top Misconceptions - BLOOMBERG BARS (Premium!) */}
         <div className="bg-white rounded-lg shadow-card p-8">
-          <div className="mb-8 pb-4 border-b-2 border-ufs-gray-200">
-            <h2 className="text-2xl font-bold text-[var(--ufs-navy)]">Top Misconceptions</h2>
-            <p className="text-sm text-ufs-gray-500 mt-1">Ranked by learner impact</p>
+          <div className="mb-8 pb-4 border-b-2 border-ufs-gray-200 flex items-center justify-between">
+            <div>
+              <h2 className="text-2xl font-bold text-[var(--ufs-navy)]">Top Misconceptions</h2>
+              <p className="text-sm text-ufs-gray-500 mt-1">Ranked by learner impact</p>
+            </div>
+            <ExplainButton onClick={() => handleExplainClick(misconceptionSummaryPayload)} />
           </div>
           
           <MisconceptionBloomberg 
@@ -848,9 +1168,22 @@ export default function AnalyticsPage() {
           </Card>
         </>
       )}
-    </div>
+      </div>
+      <NarrationTranscriptPanel
+        open={isTranscriptOpen}
+        onClose={handleCloseTranscript}
+        payload={activePayload}
+        transcript={activeTranscript}
+        isGenerating={isTranscriptGenerating}
+        error={transcriptError}
+        onRetry={() => generateTranscript()}
+        chatMessages={chatMessages}
+        onSendQuestion={sendQuestion}
+        isSendingQuestion={isSendingQuestion}
+        chatError={chatError}
+        isMaximized={isTranscriptMaximized}
+        onToggleMaximize={() => setTranscriptMaximized((value) => !value)}
+      />
+    </>
   );
 }
-
-
-

@@ -1,16 +1,49 @@
+"use client";
+
 import { CardSection } from '../../components/card-section';
 import { DashboardGrid } from '../../components/layout/dashboard-grid';
 import { PageHeader } from '../../components/layout/page-header';
 import { StatusPill } from '../../components/status-pill';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent } from '../../components/ui/card';
+import { useMemo } from 'react';
 import {
   classHealth,
   interventionQueue,
   upcomingAssessments
 } from '../../mocks/teachers';
+import { useNarrationPreview } from '../../hooks/useNarrationPreview';
+import {
+  createClassHealthPayload,
+  createInterventionQueuePayload,
+} from '../../lib/narration-builders';
 
 export default function TeachersPage() {
+  const dataTimestamp = useMemo(() => new Date().toISOString(), []);
+
+  const interventionPayload = useMemo(
+    () =>
+      createInterventionQueuePayload({
+        queueName: 'Teacher Workspace',
+        interventions: interventionQueue,
+        dataTimestamp,
+      }),
+    [dataTimestamp, interventionQueue]
+  );
+
+  const classHealthPayload = useMemo(
+    () =>
+      createClassHealthPayload({
+        snapshotTitle: 'Class Health Snapshot',
+        items: classHealth,
+        dataTimestamp,
+      }),
+    [classHealth, dataTimestamp]
+  );
+
+  useNarrationPreview(interventionPayload);
+  useNarrationPreview(classHealthPayload);
+
   return (
     <div className="space-y-8">
       <PageHeader
